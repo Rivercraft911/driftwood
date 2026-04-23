@@ -112,21 +112,45 @@ class DeviceManager:
             return {"dvt": dvt, "loc": loc, "service_provider": service_provider}
         except ImportError:
             return await asyncio.to_thread(self._create_connection_legacy, udid)
+        except Exception as e:
+            if type(e).__name__ == "InvalidServiceError":
+                raise RuntimeError(
+                    "InvalidService: iOS 17+ requires an active `pymobiledevice3 remote tunneld` tunnel"
+                ) from e
+            raise
 
     async def _service_provider_for_udid(self, udid):
         try:
-            from pymobiledevice3.tunneld import get_tunneld_devices
+            try:
+                from pymobiledevice3.tunneld.api import get_tunneld_devices
+            except ImportError:
+                from pymobiledevice3.tunneld import get_tunneld_devices
+
             rsd_devices = get_tunneld_devices()
             if inspect.isawaitable(rsd_devices):
                 rsd_devices = await rsd_devices
 
+            match = None
             for rsd in rsd_devices:
                 rsd_udid = (
                     getattr(rsd, "udid", None)
                     or (rsd.get("udid") if isinstance(rsd, dict) else None)
                 )
                 if rsd_udid == udid:
-                    return rsd
+                    match = rsd
+                else:
+                    closer = getattr(rsd, "close", None)
+                    if closer:
+                        try:
+                            if inspect.iscoroutinefunction(closer):
+                                await closer()
+                            else:
+                                await asyncio.to_thread(closer)
+                        except Exception:
+                            pass
+
+            if match is not None:
+                return match
         except Exception:
             pass
 
@@ -139,7 +163,11 @@ class DeviceManager:
 
     def _create_connection_legacy(self, udid):
         try:
-            from pymobiledevice3.tunneld import get_tunneld_devices
+            try:
+                from pymobiledevice3.tunneld.api import get_tunneld_devices
+            except ImportError:
+                from pymobiledevice3.tunneld import get_tunneld_devices
+
             rsd_devices = get_tunneld_devices()
             if inspect.isawaitable(rsd_devices):
                 rsd_devices = asyncio.run(rsd_devices)
