@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MR Driftwood</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="icon" href="/img/favicon.svg">
+</head>
+<body>
+    <div id="map"></div>
+
+    <div id="header-bar" class="floating-panel top-left">
+        <div class="header-row">
+            <span class="logo">MR DRIFTWOOD</span>
+            <div id="device-status" class="device-indicator">
+                <span class="device-dot"></span>
+                <span class="device-label">No device</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="waypoint-panel" class="floating-panel right">
+        <div class="panel-header">
+            <h3>Route</h3>
+            <div class="route-actions">
+                <button id="btn-save" title="Save route">Save</button>
+                <button id="btn-load" title="Load route">Load</button>
+                <button id="btn-clear" title="Clear route">Clear</button>
+            </div>
+        </div>
+        <div class="route-options">
+            <label class="toggle-label">
+                <input type="checkbox" id="snap-toggle">
+                <span>Snap to roads</span>
+            </label>
+            <div class="gpx-actions">
+                <button id="btn-gpx-import" class="btn-small">Import GPX</button>
+                <button id="btn-gpx-export" class="btn-small">Export GPX</button>
+            </div>
+        </div>
+        <ul id="waypoint-list"></ul>
+        <div id="route-empty" class="empty-state">Click the map to add waypoints</div>
+    </div>
+
+    <div id="playback-bar" class="floating-panel bottom">
+        <div id="scrub-container">
+            <div id="scrub-bar">
+                <div id="scrub-progress"></div>
+                <div id="scrub-handle"></div>
+            </div>
+        </div>
+        <div class="playback-row">
+            <div class="playback-controls">
+                <button id="btn-play" class="btn-icon" title="Play">&#9654;</button>
+                <button id="btn-pause" class="btn-icon" title="Pause" hidden>&#10074;&#10074;</button>
+                <button id="btn-stop" class="btn-icon" title="Stop">&#9632;</button>
+            </div>
+            <div class="speed-control">
+                <input type="range" id="speed-slider" min="0.5" max="30" step="0.1" value="1.4">
+                <span id="speed-label">1.4 m/s</span>
+            </div>
+            <div class="speed-presets">
+                <button data-speed="1.4" class="preset active">Walk</button>
+                <button data-speed="2.8" class="preset">Jog</button>
+                <button data-speed="5.5" class="preset">Bike</button>
+                <button data-speed="13.4" class="preset">Drive</button>
+            </div>
+            <div class="loop-controls">
+                <button id="btn-loop" class="btn-icon" data-mode="none" title="Loop: off">&#8635;</button>
+            </div>
+        </div>
+        <div id="stats-bar">
+            <span class="stat"><span class="stat-label">Speed</span><span id="stat-speed">0 m/s</span></span>
+            <span class="stat"><span class="stat-label">Distance</span><span id="stat-distance">0 m</span></span>
+            <span class="stat"><span class="stat-label">Elapsed</span><span id="stat-elapsed">0:00</span></span>
+            <span class="stat"><span class="stat-label">Remaining</span><span id="stat-remaining">--:--</span></span>
+            <span class="stat"><span class="stat-label">Coords</span><span id="stat-coords">--</span></span>
+        </div>
+    </div>
+
+    <div id="realism-panel" class="floating-panel bottom-left">
+        <div class="realism-title">Realism</div>
+        <label class="toggle-label"><input type="checkbox" id="jitter-toggle" checked><span>Jitter</span></label>
+        <label class="toggle-label"><input type="checkbox" id="easing-toggle" checked><span>Easing</span></label>
+        <label class="toggle-label"><input type="checkbox" id="drift-toggle" checked><span>Drift</span></label>
+    </div>
+
+    <div id="modal-overlay" class="modal-overlay" hidden>
+        <div id="modal-content" class="modal"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script type="module" src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+import asyncio
+import logging
+from ..models.device import DeviceInfo
+
+log = logging.getLogger(__name__)
+
+
+class DeviceManager:
+    def __init__(self):
+        self._devices = {}
+        self._active_udid = None
+        self._active_conn = None
+        self._poll_task = None
+        self._listeners = []
+
+    async def start_polling(self):
+        self._poll_task = asyncio.create_task(self._poll_loop())
+
+    async def stop_polling(self):
+        if self._poll_task:
+            self._poll_task.cancel()
+            try:
+                await self._poll_task
+            except asyncio.CancelledError:
+                pass
+
+    async def _poll_loop(self):
+        while True:
+            try:
+                await self._scan()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log.debug(f"Device scan error: {e}")
+            await asyncio.sleep(2)
+
+    async def _scan(self):
+        try:
+            from pymobiledevice3.usbmux import list_devices
+            current = {}
+            for d in list_devices():
+                serial = d.serial
+                current[serial] = {
+                    "udid": serial,
+                    "name": getattr(d, 'name', serial[:12]),
+                }
+
+            for udid in set(self._devices) - set(current):
+                del self._devices[udid]
+                if self._active_udid == udid:
+                    self._active_udid = None
+                    self._active_conn = None
+
+            for udid, info in current.items():
+                if udid not in self._devices:
+                    self._devices[udid] = info
+
+        except ImportError:
+            pass
+        except Exception as e:
+            log.debug(f"pymobiledevice3 scan: {e}")
+
+    def list_devices(self):
+        return [
+            DeviceInfo(
+                udid=info["udid"],
+                name=info["name"],
+                active=(info["udid"] == self._active_udid),
+            )
+            for info in self._devices.values()
+        ]
+
+    async def connect(self, udid):
+        if udid not in self._devices:
+            raise ValueError(f"Device {udid} not found")
+
+        conn = await asyncio.get_event_loop().run_in_executor(None, self._create_connection, udid)
+        self._active_udid = udid
+        self._active_conn = conn
+
+    def _create_connection(self, udid):
+        try:
+            from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+            from pymobiledevice3.tunneld import get_tunneld_devices
+            for rsd in get_tunneld_devices():
+                if rsd.udid == udid:
+                    from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+                    from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
+                    dvt = DvtSecureSocketProxyService(rsd)
+                    dvt.perform_handshake()
+                    return {"dvt": dvt, "loc": LocationSimulation(dvt)}
+        except Exception:
+            pass
+
+        from pymobiledevice3.lockdown import create_using_usbmux
+        from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+        from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
+        lockdown = create_using_usbmux(serial=udid)
+        dvt = DvtSecureSocketProxyService(lockdown)
+        dvt.perform_handshake()
+        return {"dvt": dvt, "loc": LocationSimulation(dvt)}
+
+    async def set_location(self, lat, lon):
+        if not self._active_conn:
+            return
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None, self._active_conn["loc"].set, lat, lon
+            )
+        except Exception as e:
+            self._active_conn = None
+            self._active_udid = None
+            raise ConnectionError(f"Device lost: {e}")
+
+    async def clear_location(self):
+        if not self._active_conn:
+            return
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None, self._active_conn["loc"].clear
+            )
+        except Exception:
+            pass
+
+    async def disconnect(self, udid=None):
+        await self.clear_location()
+        self._active_conn = None
+        self._active_udid = None
