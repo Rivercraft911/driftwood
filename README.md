@@ -25,6 +25,8 @@ Draw GPS routes on a map. Walk your iPhone along them in real time over USB. No 
 
 ## Setup
 
+Enable Developer Mode on your iPhone
+
 ```bash
 pip install -e .
 ```
