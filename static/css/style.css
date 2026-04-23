@@ -85,7 +85,8 @@
 /* ── Slider tracks (rgba white-on-white invisible → pink track) ── */
 /* !important needed to beat the -webkit-appearance reset specificity */
 [data-theme="kawaii"] .speed-control input[type="range"],
-[data-theme="kawaii"] #update-rate-slider {
+[data-theme="kawaii"] #update-rate-slider,
+[data-theme="kawaii"] #pitch-slider {
     background: rgba(219, 39, 119, 0.2) !important;
 }
 
@@ -173,6 +174,48 @@ body {
     background: var(--amber-glow);
     border-color: var(--amber);
     color: var(--amber);
+}
+
+.pitch-control {
+    width: 74px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 5px 7px 7px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    font-size: 10px;
+    line-height: 1;
+}
+
+.pitch-control.active {
+    color: var(--amber);
+    border-color: var(--border-bright);
+    background: var(--amber-glow);
+}
+
+.pitch-control input[type="range"] {
+    width: 100%;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 2px;
+    outline: none;
+}
+
+.pitch-control input[type="range"]:disabled {
+    opacity: 0.35;
+}
+
+.pitch-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--amber);
+    cursor: pointer;
 }
 
 .right {

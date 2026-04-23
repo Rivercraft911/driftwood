@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MR Driftwood</title>
     <link rel="stylesheet" href="/css/style.css">
-    <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.20.0/mapbox-gl.css">
+    <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.21.0/mapbox-gl.css">
     <link rel="icon" href="/img/favicon.svg">
 </head>
 <body>
@@ -24,6 +24,11 @@
 
     <div id="map-layer-control" class="floating-panel layer-control">
         <button id="btn-map-layer" class="btn-ghost" title="Map layer: streets">Map</button>
+        <button id="btn-3d" class="btn-ghost" title="3D view: off">3D</button>
+        <label id="pitch-control" class="pitch-control" title="3D camera angle">
+            <span>Tilt</span>
+            <input type="range" id="pitch-slider" min="0" max="80" step="1" value="60" disabled>
+        </label>
         <button id="btn-route-provider" class="btn-ghost" title="Routing provider: OSRM">OSRM</button>
     </div>
 
@@ -110,7 +115,7 @@
         <div id="modal-content" class="modal"></div>
     </div>
 
-    <script src="https://api.mapbox.com/mapbox-gl-js/v3.20.0/mapbox-gl.js"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.21.0/mapbox-gl.js"></script>
     <script type="module" src="/js/app.js"></script>
 </body>
 </html>

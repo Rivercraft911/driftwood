@@ -102,6 +102,33 @@ btnKawaii.onclick = () => theme.toggle();
 const btnMapLayer = document.getElementById('btn-map-layer');
 theme.setLayerButton(btnMapLayer);
 btnMapLayer.onclick = () => theme.toggleMapLayer();
+const btn3D = document.getElementById('btn-3d');
+const pitchControl = document.getElementById('pitch-control');
+const pitchSlider = document.getElementById('pitch-slider');
+let threeDEnabled = localStorage.getItem('driftwood_3d') === 'on';
+let threeDPitch = Number(localStorage.getItem('driftwood_3d_pitch') || pitchSlider.value || 60);
+if (!Number.isFinite(threeDPitch)) threeDPitch = 60;
+pitchSlider.value = String(threeDPitch);
+map.setPitch(threeDPitch);
+map.set3DMode(threeDEnabled, threeDPitch);
+function update3DControls() {
+    btn3D.classList.toggle('active', threeDEnabled);
+    btn3D.title = threeDEnabled ? '3D view: on' : '3D view: off';
+    pitchSlider.disabled = !threeDEnabled;
+    pitchControl.classList.toggle('active', threeDEnabled);
+}
+btn3D.onclick = () => {
+    threeDEnabled = !threeDEnabled;
+    localStorage.setItem('driftwood_3d', threeDEnabled ? 'on' : 'off');
+    map.set3DMode(threeDEnabled, threeDPitch);
+    update3DControls();
+};
+pitchSlider.oninput = () => {
+    threeDPitch = Number(pitchSlider.value);
+    localStorage.setItem('driftwood_3d_pitch', String(threeDPitch));
+    map.setPitch(threeDPitch);
+};
+update3DControls();
 const btnRouteProvider = document.getElementById('btn-route-provider');
 function updateRouteProviderButton() {
     const provider = builder.routerProvider;

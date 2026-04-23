@@ -2,6 +2,9 @@ const DEFAULT_STYLES = {
     streets: 'mapbox://styles/mapbox/standard',
     satellite: 'mapbox://styles/mapbox/standard-satellite',
 };
+const DEFAULT_3D_PITCH = 60;
+const DEFAULT_3D_BEARING = -22;
+const TERRAIN_SOURCE_ID = 'driftwood-mapbox-dem';
 
 let lineId = 0;
 
@@ -20,6 +23,16 @@ function toLngLat(value) {
 
 function lightPresetForTheme(theme) {
     return theme === 'kawaii' ? 'day' : 'night';
+}
+
+function standardThemeForTheme(theme) {
+    return theme === 'kawaii' ? 'default' : 'monochrome';
+}
+
+function clampPitch(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return DEFAULT_3D_PITCH;
+    return Math.max(0, Math.min(80, n));
 }
 
 class LatLngBounds {
@@ -166,6 +179,9 @@ class MapboxMapAdapter {
         this._layer = 'streets';
         this._activeLayer = 'streets';
         this._theme = 'default';
+        this._is3D = false;
+        this._pitch = DEFAULT_3D_PITCH;
+        this._bearing = DEFAULT_3D_BEARING;
         this._center = [37.7749, -122.4194];
         this._zoom = 13;
         this._map = null;
@@ -183,16 +199,23 @@ class MapboxMapAdapter {
             center: [-122.4194, 37.7749],
             zoom: this._zoom,
             projection: 'globe',
+            antialias: true,
             attributionControl: true,
             config: {
-                basemap: { lightPreset: lightPresetForTheme(this._theme) },
+                basemap: {
+                    lightPreset: lightPresetForTheme(this._theme),
+                    theme: standardThemeForTheme(this._theme),
+                    show3dObjects: true,
+                },
             },
         });
 
         this._map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'top-right');
         this._map.on('style.load', () => {
             this._applyGlobe();
-            this._applyLightPreset();
+            this._applyStandardConfig();
+            this._applyTerrain();
+            this._apply3DCamera(false);
             for (const line of this._lineOverlays) this._renderLine(line);
         });
         this._map.on('click', (event) => {
@@ -247,12 +270,34 @@ class MapboxMapAdapter {
 
         const nextStyle = this._styles[this._layer] || DEFAULT_STYLES[this._layer];
         if (this._activeLayer === this._layer) {
-            this._applyLightPreset();
+            this._applyStandardConfig();
             return;
         }
 
         this._activeLayer = this._layer;
         this._map.setStyle(nextStyle);
+    }
+
+    set3DMode(enabled, pitch = this._pitch) {
+        this._is3D = Boolean(enabled);
+        this._pitch = clampPitch(pitch);
+        this._applyTerrain();
+        this._apply3DCamera(true);
+        return this;
+    }
+
+    setPitch(pitch) {
+        this._pitch = clampPitch(pitch);
+        if (this._is3D) this._apply3DCamera(false);
+        return this;
+    }
+
+    getPitch() {
+        return this._is3D && this._map ? Math.round(this._map.getPitch()) : this._pitch;
+    }
+
+    is3DMode() {
+        return this._is3D;
     }
 
     _emit(type, event) {
@@ -291,6 +336,7 @@ class MapboxMapAdapter {
             id: line._layerId,
             type: 'line',
             source: line._sourceId,
+            slot: 'top',
             layout: {
                 'line-cap': 'round',
                 'line-join': 'round',
@@ -301,17 +347,76 @@ class MapboxMapAdapter {
 
     _applyGlobe() {
         if (!this._map) return;
-        if (this._map.setProjection) this._map.setProjection('globe');
-        if (this._map.setFog) this._map.setFog({});
+        try {
+            if (this._map.setProjection) this._map.setProjection('globe');
+        } catch {
+            // The constructor already requests globe projection; style swaps may lag briefly.
+        }
+        if (!this._map.isStyleLoaded()) return;
+        if (this._map.setFog) {
+            try {
+                this._map.setFog({
+                    color: this._theme === 'kawaii' ? '#eef4ff' : '#07111f',
+                    'high-color': this._theme === 'kawaii' ? '#d8ecff' : '#10263d',
+                    'horizon-blend': this._is3D ? 0.08 : 0.04,
+                    'space-color': '#030712',
+                    'star-intensity': this._is3D ? 0.45 : 0.25,
+                });
+            } catch {
+                // Fog is cosmetic, so keep the map usable if a style rejects it mid-load.
+            }
+        }
     }
 
-    _applyLightPreset() {
+    _applyStandardConfig() {
         if (!this._map || !this._map.setConfigProperty) return;
-        try {
-            this._map.setConfigProperty('basemap', 'lightPreset', lightPresetForTheme(this._theme));
-        } catch {
-            // Older style loads can briefly reject config changes while swapping styles.
+        const config = [
+            ['lightPreset', lightPresetForTheme(this._theme)],
+            ['show3dObjects', true],
+        ];
+        if (this._layer === 'streets') {
+            config.push(['theme', standardThemeForTheme(this._theme)]);
         }
+
+        for (const [key, value] of config) {
+            try {
+                this._map.setConfigProperty('basemap', key, value);
+            } catch {
+                // Style config support differs slightly between Standard and Standard Satellite.
+            }
+        }
+        this._applyGlobe();
+    }
+
+    _applyTerrain() {
+        if (!this._map || !this._map.isStyleLoaded()) return;
+        if (!this._is3D) {
+            if (this._map.setTerrain) this._map.setTerrain(null);
+            return;
+        }
+
+        if (!this._map.getSource(TERRAIN_SOURCE_ID)) {
+            this._map.addSource(TERRAIN_SOURCE_ID, {
+                type: 'raster-dem',
+                url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
+                tileSize: 512,
+                maxzoom: 14,
+            });
+        }
+        if (this._map.setTerrain) {
+            this._map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: 1.35 });
+        }
+    }
+
+    _apply3DCamera(animate) {
+        if (!this._map) return;
+        if (!this._map.isStyleLoaded()) return;
+        const target = {
+            pitch: this._is3D ? this._pitch : 0,
+            bearing: this._is3D ? this._bearing : 0,
+        };
+        if (animate) this._map.easeTo({ ...target, duration: 650 });
+        else this._map.jumpTo(target);
     }
 
     _showUnavailable() {
