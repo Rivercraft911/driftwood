@@ -1,5 +1,5 @@
 export class RouteBuilder {
-    constructor(map) {
+    constructor(map, routingConfig = {}) {
         this.map = map;
         this.waypoints = [];
         this.polyline = null;
@@ -7,7 +7,11 @@ export class RouteBuilder {
         this.snapEnabled = false;
         this._routeName = 'untitled';
         this._listeners = [];
+        this._routingListeners = [];
         this._snapRequestId = 0;
+        this._snapBackoffUntil = { osrm: 0, mapbox: 0 };
+        this._routingProviders = this._buildRoutingProviders(routingConfig);
+        this.routerProvider = this._initialRouterProvider(routingConfig.defaultProvider);
         this._markerIcon = L.divIcon({
             className: 'waypoint-marker',
             html: '',
@@ -51,6 +55,27 @@ export class RouteBuilder {
 
     onChange(fn) {
         this._listeners.push(fn);
+    }
+
+    onRoutingProviderChange(fn) {
+        this._routingListeners.push(fn);
+    }
+
+    isRoutingProviderAvailable(provider) {
+        return Boolean(this._routingProviders[provider]?.available);
+    }
+
+    setRouterProvider(provider) {
+        if (!this.isRoutingProviderAvailable(provider) || provider === this.routerProvider) return false;
+        this.routerProvider = provider;
+        localStorage.setItem('driftwood_router_provider', provider);
+        this.cancelSnap();
+        this.snappedPath = null;
+        this._updateLine();
+        this._emit();
+        for (const fn of this._routingListeners) fn(provider);
+        if (this.snapEnabled && this.waypoints.length >= 2) void this.snapToRoads();
+        return true;
     }
 
     _emit() {
@@ -149,8 +174,12 @@ export class RouteBuilder {
         this._updateLine();
     }
 
+    cancelSnap() {
+        this._snapRequestId++;
+    }
+
     async snapToRoads() {
-        if (this.waypoints.length < 2) return;
+        if (!this.snapEnabled || this.waypoints.length < 2) return;
         const reqId = ++this._snapRequestId;
         const snapped = [];
 
@@ -158,28 +187,34 @@ export class RouteBuilder {
             const a = this.waypoints[i];
             const b = this.waypoints[i + 1];
             const segment = await this._snapSegment(a, b);
-            if (reqId !== this._snapRequestId) return;
+            if (!this.snapEnabled || reqId !== this._snapRequestId) return;
 
             const fallback = [[a.lat, a.lon], [b.lat, b.lon]];
             this._appendSegment(snapped, segment && segment.length >= 2 ? segment : fallback);
         }
 
-        if (reqId !== this._snapRequestId) return;
+        if (!this.snapEnabled || reqId !== this._snapRequestId) return;
         this.snappedPath = snapped.length >= 2 ? snapped : null;
         this._updateLine();
         this._emit();
     }
 
     async _snapSegment(a, b) {
+        const provider = this.routerProvider;
+        if (Date.now() < (this._snapBackoffUntil[provider] || 0)) return null;
         const coords = `${a.lon},${a.lat};${b.lon},${b.lat}`;
         try {
-            const resp = await fetch(`/api/proxy/osrm/route?coords=${encodeURIComponent(coords)}`);
-            if (!resp.ok) return null;
+            const resp = await fetch(`/api/proxy/route?provider=${encodeURIComponent(provider)}&coords=${encodeURIComponent(coords)}`);
+            if (!resp.ok) {
+                if (resp.status >= 500) this._snapBackoffUntil[provider] = Date.now() + 60_000;
+                return null;
+            }
             const data = await resp.json();
             if (!data.routes || !data.routes[0] || !data.routes[0].geometry) return null;
             const geom = data.routes[0].geometry.coordinates;
             return geom.map(c => [c[1], c[0]]);
         } catch {
+            this._snapBackoffUntil[provider] = Date.now() + 60_000;
             return null;
         }
     }
@@ -288,5 +323,24 @@ export class RouteBuilder {
             this.map.fitBounds(bounds, { padding: [50, 50] });
         }
         this._emit();
+    }
+
+    _buildRoutingProviders(config) {
+        const providers = {
+            osrm: { id: 'osrm', label: 'OSRM', available: true },
+            mapbox: { id: 'mapbox', label: 'Mapbox', available: false },
+        };
+        for (const provider of config.providers || []) {
+            if (provider?.id) providers[provider.id] = { ...provider };
+        }
+        providers.osrm.available = true;
+        return providers;
+    }
+
+    _initialRouterProvider(defaultProvider = 'osrm') {
+        const saved = localStorage.getItem('driftwood_router_provider');
+        if (saved && this.isRoutingProviderAvailable(saved)) return saved;
+        if (this.isRoutingProviderAvailable(defaultProvider)) return defaultProvider;
+        return 'osrm';
     }
 }

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 
 
 class RealismConfig(BaseModel):
@@ -14,7 +14,7 @@ class RealismConfig(BaseModel):
 class PlaybackConfig(BaseModel):
     speed_mps: float = Field(default=1.4, ge=0.1, le=71.53)
     use_arrival_times: bool = False
-    loop_mode: str = "none"
+    loop_mode: Literal["none", "loop", "bounce"] = "none"
     device_update_interval_s: float = Field(default=0.25, ge=0.25, le=50.0)
     realism: RealismConfig = Field(default_factory=RealismConfig)
 

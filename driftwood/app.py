@@ -5,6 +5,7 @@ from .api.routes import router as routes_router
 from .api.devices import router as devices_router
 from .api.playback import router as playback_router
 from .api.proxy import router as proxy_router
+from .api.config import router as config_router
 from .services.route_store import RouteStore
 from .services.playback import PlaybackController
 from .services.device_manager import DeviceManager
@@ -29,5 +30,6 @@ def create_app():
     app.include_router(devices_router, prefix="/api/devices")
     app.include_router(playback_router, prefix="/api/playback")
     app.include_router(proxy_router, prefix="/api/proxy")
+    app.include_router(config_router, prefix="/api/config")
     app.mount("/", StaticFiles(directory=str(cfg.STATIC_DIR), html=True))
     return app

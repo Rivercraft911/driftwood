@@ -34,7 +34,10 @@ async def delete_route(name: str, request: Request):
 @router.post("/import-gpx")
 async def import_gpx(request: Request):
     body = await request.body()
-    waypoints = parse_gpx(body.decode("utf-8"))
+    try:
+        waypoints = parse_gpx(body.decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(400, f"Invalid GPX: {e}")
     if not waypoints:
         raise HTTPException(400, "No waypoints found in GPX")
     return {"waypoints": [w.model_dump() for w in waypoints]}

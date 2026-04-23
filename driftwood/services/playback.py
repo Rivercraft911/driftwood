@@ -144,13 +144,20 @@ class PlaybackController:
                             await self._broadcast_state("device_lost")
                             break
 
+                    if self.simulation.total_distance <= 0:
+                        self.state = PlaybackState.IDLE
+                        await self._broadcast_state("route_complete")
+                        break
+
                     if self._config.loop_mode == "loop":
                         self.simulation.reset()
                         self._last_device_push_at = None
+                        await asyncio.sleep(cfg.TICK_INTERVAL)
                         continue
                     elif self._config.loop_mode == "bounce":
                         self.simulation.reverse()
                         self._last_device_push_at = None
+                        await asyncio.sleep(cfg.TICK_INTERVAL)
                         continue
                     else:
                         self.state = PlaybackState.IDLE

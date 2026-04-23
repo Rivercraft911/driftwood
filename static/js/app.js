@@ -9,11 +9,31 @@ import { StatsDisplay } from './stats.js';
 import { GpxHandler } from './gpx.js';
 import { ThemeManager } from './theme.js';
 
-const map = initMap('map');
+async function loadClientConfig() {
+    try {
+        const resp = await fetch('/api/config');
+        if (!resp.ok) throw new Error('config unavailable');
+        return await resp.json();
+    } catch {
+        return {
+            mapbox: { accessToken: null },
+            routing: {
+                defaultProvider: 'osrm',
+                providers: [
+                    { id: 'osrm', label: 'OSRM', available: true },
+                    { id: 'mapbox', label: 'Mapbox', available: false },
+                ],
+            },
+        };
+    }
+}
+
+const clientConfig = await loadClientConfig();
+const map = initMap('map', clientConfig);
 const theme = new ThemeManager(map);
 const ws = new DriftwoodSocket();
 const trail = new TrailRenderer(map);
-const builder = new RouteBuilder(map);
+const builder = new RouteBuilder(map, clientConfig.routing);
 const panel = new WaypointPanel(builder);
 const playback = new PlaybackControls(ws, builder);
 const device = new DevicePanel(ws);
@@ -79,6 +99,27 @@ ws.connect();
 const btnKawaii = document.getElementById('btn-kawaii');
 theme.setButton(btnKawaii);
 btnKawaii.onclick = () => theme.toggle();
+const btnMapLayer = document.getElementById('btn-map-layer');
+theme.setLayerButton(btnMapLayer);
+btnMapLayer.onclick = () => theme.toggleMapLayer();
+const btnRouteProvider = document.getElementById('btn-route-provider');
+function updateRouteProviderButton() {
+    const provider = builder.routerProvider;
+    const mapboxAvailable = builder.isRoutingProviderAvailable('mapbox');
+    btnRouteProvider.textContent = provider === 'mapbox' ? 'Mapbox' : 'OSRM';
+    btnRouteProvider.title = mapboxAvailable
+        ? `Routing provider: ${provider === 'mapbox' ? 'Mapbox' : 'OSRM'}`
+        : 'Routing provider: OSRM (Mapbox token missing)';
+    btnRouteProvider.classList.toggle('active', provider === 'mapbox');
+    btnRouteProvider.disabled = !mapboxAvailable;
+}
+btnRouteProvider.onclick = () => {
+    const next = builder.routerProvider === 'mapbox' ? 'osrm' : 'mapbox';
+    builder.setRouterProvider(next);
+    updateRouteProviderButton();
+};
+builder.onRoutingProviderChange(updateRouteProviderButton);
+updateRouteProviderButton();
 theme.onChange(() => {
     builder.refreshColors();
     trail.refresh();
@@ -107,6 +148,7 @@ snapToggle.onchange = () => {
     if (snapToggle.checked && builder.waypoints.length >= 2) {
         builder.snapToRoads();
     } else {
+        builder.cancelSnap();
         builder.snappedPath = null;
         builder._updateLine();
         builder.notifyMetadataChanged();
@@ -132,6 +174,16 @@ function hideModal() {
     modalContent.innerHTML = '';
 }
 
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    })[ch]);
+}
+
 overlay.onclick = (e) => {
     if (e.target === overlay) hideModal();
 };
@@ -140,7 +192,7 @@ document.getElementById('btn-save').onclick = () => {
     const route = builder.toRoute();
     showModal(`
         <h3>Save Route</h3>
-        <input type="text" id="save-name" value="${route.name}" placeholder="Route name" autofocus>
+        <input type="text" id="save-name" value="${escapeHtml(route.name)}" placeholder="Route name" autofocus>
         <div class="modal-actions">
             <button class="btn-cancel" id="save-cancel">Cancel</button>
             <button id="save-confirm">Save</button>
@@ -181,12 +233,12 @@ document.getElementById('btn-load').onclick = async () => {
     }
 
     const items = routes.map(r => `
-        <div class="route-list-item" data-name="${r.name}">
+        <div class="route-list-item" data-name="${escapeHtml(r.name)}">
             <div>
-                <div class="route-list-name">${r.name}</div>
+                <div class="route-list-name">${escapeHtml(r.name)}</div>
                 <div class="route-list-meta">${r.waypoint_count} pts &middot; ${(r.total_distance_m / 1000).toFixed(1)} km</div>
             </div>
-            <button class="delete-btn" data-delete="${r.name}" title="Delete">&times;</button>
+            <button class="delete-btn" data-delete="${escapeHtml(r.name)}" title="Delete">&times;</button>
         </div>
     `).join('');
 
