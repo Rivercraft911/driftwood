@@ -25,8 +25,8 @@ export class RouteBuilder {
         style.id = 'wp-marker-styles';
         style.textContent = `
             .waypoint-marker {
-                background: #b45309;
-                border: 2px solid #f59e0b;
+                background: var(--amber-dim, #b45309);
+                border: 2px solid var(--amber, #f59e0b);
                 border-radius: 50%;
                 display: flex;
                 align-items: center;
@@ -35,15 +35,15 @@ export class RouteBuilder {
                 font-weight: 700;
                 color: white;
                 font-family: 'SF Mono', monospace;
-                box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+                box-shadow: 0 0 8px var(--marker-glow, rgba(245, 158, 11, 0.4));
             }
             .position-marker {
                 width: 16px;
                 height: 16px;
-                background: #f59e0b;
+                background: var(--amber, #f59e0b);
                 border: 3px solid white;
                 border-radius: 50%;
-                box-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
+                box-shadow: 0 0 12px var(--marker-glow, rgba(245, 158, 11, 0.6));
             }
         `;
         document.head.appendChild(style);
@@ -119,25 +119,34 @@ export class RouteBuilder {
         });
     }
 
+    _accent() {
+        return getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() || '#f59e0b';
+    }
+
     _updateLine() {
         if (this.polyline) {
             this.polyline.remove();
             this.polyline = null;
         }
+        const color = this._accent();
         if (this.snappedPath && this.snappedPath.length >= 2) {
             this.polyline = L.polyline(this.snappedPath, {
-                color: '#f59e0b',
+                color,
                 weight: 3,
                 opacity: 0.8,
             }).addTo(this.map);
         } else if (this.waypoints.length >= 2) {
             const coords = this.waypoints.map(w => [w.lat, w.lon]);
             this.polyline = L.polyline(coords, {
-                color: '#f59e0b',
+                color,
                 weight: 3,
                 opacity: 0.8,
             }).addTo(this.map);
         }
+    }
+
+    refreshColors() {
+        this._updateLine();
     }
 
     async snapToRoads() {
@@ -188,6 +197,15 @@ export class RouteBuilder {
         } else {
             target.push(...segment);
         }
+    }
+
+    undo() {
+        if (this.waypoints.length === 0) return;
+        const wp = this.waypoints[this.waypoints.length - 1];
+        wp.marker.remove();
+        this.waypoints.pop();
+        this._renumberMarkers();
+        this._onGeometryChanged();
     }
 
     clearRoute() {

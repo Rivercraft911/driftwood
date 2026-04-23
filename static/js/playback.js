@@ -26,6 +26,7 @@ export class PlaybackControls {
         this.scrubProgress = document.getElementById('scrub-progress');
         this.scrubHandle = document.getElementById('scrub-handle');
         this.presets = document.querySelectorAll('.preset');
+        this._activePreset = this.presets[0] || null;
         this.unitButtons = document.querySelectorAll('.unit-btn');
 
         this.btnUpdateRate = document.getElementById('btn-update-rate');
@@ -72,6 +73,7 @@ export class PlaybackControls {
 
         this.presets.forEach(btn => {
             btn.onclick = () => {
+                this._activePreset = btn;
                 this.speedMps = this._normalizeSpeed(parseFloat(btn.dataset.speed));
                 this._renderSpeed();
                 if (this._isConfigLive()) this._sendConfig();
@@ -131,6 +133,14 @@ export class PlaybackControls {
     }
 
     _speedBounds() {
+        if (this._activePreset) {
+            const minMps = parseFloat(this._activePreset.dataset.min ?? MIN_SPEED_MPS);
+            const maxMps = parseFloat(this._activePreset.dataset.max ?? MAX_SPEED_MPS);
+            if (this.speedUnit === 'mph') {
+                return { min: mpsToMph(minMps).toFixed(1), max: mpsToMph(maxMps).toFixed(1), step: 0.1 };
+            }
+            return { min: minMps.toFixed(2), max: maxMps.toFixed(2), step: 0.05 };
+        }
         if (this.speedUnit === 'mph') return { min: 0.5, max: 160, step: 0.1 };
         return { min: 0.1, max: 71.5, step: 0.1 };
     }
@@ -178,8 +188,7 @@ export class PlaybackControls {
 
     _updatePresetHighlight() {
         this.presets.forEach(btn => {
-            const presetMps = parseFloat(btn.dataset.speed);
-            btn.classList.toggle('active', Math.abs(presetMps - this.speedMps) < 0.2);
+            btn.classList.toggle('active', btn === this._activePreset);
         });
     }
 

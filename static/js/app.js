@@ -7,8 +7,10 @@ import { DevicePanel } from './device-panel.js';
 import { TrailRenderer } from './trail.js';
 import { StatsDisplay } from './stats.js';
 import { GpxHandler } from './gpx.js';
+import { ThemeManager } from './theme.js';
 
 const map = initMap('map');
+const theme = new ThemeManager(map);
 const ws = new DriftwoodSocket();
 const trail = new TrailRenderer(map);
 const builder = new RouteBuilder(map);
@@ -24,10 +26,36 @@ const overlay = document.getElementById('modal-overlay');
 const modalContent = document.getElementById('modal-content');
 const snapToggle = document.getElementById('snap-toggle');
 
+let autoFollow = false;
+let lastPosition = null;
+
+const btnFollow = document.getElementById('btn-follow');
+btnFollow.onclick = () => {
+    autoFollow = !autoFollow;
+    btnFollow.classList.toggle('active', autoFollow);
+    btnFollow.title = autoFollow ? 'Auto-follow: on' : 'Auto-follow: off';
+    if (autoFollow && lastPosition) {
+        map.setView([lastPosition.lat, lastPosition.lon], Math.max(map.getZoom(), 15), { animate: false });
+    }
+};
+map.on('dragstart', () => {
+    if (autoFollow) {
+        autoFollow = false;
+        btnFollow.classList.remove('active');
+        btnFollow.title = 'Auto-follow: off';
+    }
+});
+
 ws.on('position', (data) => {
+    lastPosition = data;
     trail.addPoint(data.lat, data.lon);
     stats.update(data);
     playback.updateProgress(data.progress);
+    if (autoFollow) {
+        const lat = data.smooth_lat ?? data.lat;
+        const lon = data.smooth_lon ?? data.lon;
+        map.setView([lat, lon], map.getZoom(), { animate: false });
+    }
 });
 
 ws.on('state', (data) => {
@@ -35,6 +63,7 @@ ws.on('state', (data) => {
     if (data.state === 'idle') {
         trail.clear();
         stats.reset();
+        lastPosition = null;
     }
 });
 
@@ -46,6 +75,33 @@ ws.on('error', (data) => {
 
 ws.connect();
 
+// theme toggle
+const btnKawaii = document.getElementById('btn-kawaii');
+theme.setButton(btnKawaii);
+btnKawaii.onclick = () => theme.toggle();
+theme.onChange(() => {
+    builder.refreshColors();
+    trail.refresh();
+});
+
+// keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+        e.preventDefault();
+        builder.undo();
+        return;
+    }
+    if (e.key === ' ') {
+        e.preventDefault();
+        if (playback.state === 'playing') ws.send({ type: 'pause' });
+        else if (playback.state === 'paused') ws.send({ type: 'resume' });
+        else document.getElementById('btn-play').click();
+    } else if (e.key === 'Escape') {
+        if (playback.state !== 'idle') ws.send({ type: 'stop' });
+    }
+});
+
 snapToggle.onchange = () => {
     builder.snapEnabled = snapToggle.checked;
     if (snapToggle.checked && builder.waypoints.length >= 2) {
@@ -55,6 +111,15 @@ snapToggle.onchange = () => {
         builder._updateLine();
         builder.notifyMetadataChanged();
     }
+};
+
+// fit route to view
+document.getElementById('btn-fit').onclick = () => {
+    if (builder.waypoints.length === 0) return;
+    const coords = builder.snappedPath && builder.snappedPath.length > 0
+        ? builder.snappedPath
+        : builder.waypoints.map(w => [w.lat, w.lon]);
+    map.fitBounds(L.latLngBounds(coords), { padding: [50, 50] });
 };
 
 function showModal(html) {

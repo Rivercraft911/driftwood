@@ -1,0 +1,29 @@
+{
+  "name": "untitled",
+  "waypoints": [
+    {
+      "lat": 37.7746497266208,
+      "lon": -122.41979598999025,
+      "arrival_time": null,
+      "dwell_time": null,
+      "label": null
+    },
+    {
+      "lat": 37.72537943713553,
+      "lon": -122.47498512268068,
+      "arrival_time": null,
+      "dwell_time": null,
+      "label": null
+    },
+    {
+      "lat": 37.76447260365713,
+      "lon": -122.4539566040039,
+      "arrival_time": null,
+      "dwell_time": null,
+      "label": null
+    }
+  ],
+  "snapped_path": null,
+  "created": "2026-04-23T21:04:53.250510",
+  "modified": "2026-04-23T21:04:53.250574"
+}

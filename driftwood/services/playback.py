@@ -185,6 +185,8 @@ class PlaybackController:
                     "type": "position",
                     "lat": point.lat,
                     "lon": point.lon,
+                    "smooth_lat": point.smooth_lat or point.lat,
+                    "smooth_lon": point.smooth_lon or point.lon,
                     "speed_mps": point.speed,
                     "heading": point.heading,
                     "elapsed_s": self.simulation.elapsed,

@@ -24,6 +24,8 @@ class SimPoint(BaseModel):
     lon: float
     speed: float
     heading: float
+    smooth_lat: Optional[float] = None
+    smooth_lon: Optional[float] = None
 
 
 class PlaybackStatus(BaseModel):
