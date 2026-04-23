@@ -77,6 +77,13 @@ async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
     playback = websocket.app.state.playback
     playback.add_ws(websocket)
+    status = playback.status
+    await websocket.send_json({
+        "type": "state",
+        "state": status.state,
+        "reason": "snapshot",
+        "route_name": status.route_name,
+    })
 
     try:
         while True:

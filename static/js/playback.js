@@ -5,6 +5,7 @@ export class PlaybackControls {
         this.state = 'idle';
         this.loopMode = 'none';
         this.speed = 1.4;
+        this.useArrivalTimes = false;
 
         this.btnPlay = document.getElementById('btn-play');
         this.btnPause = document.getElementById('btn-pause');
@@ -37,6 +38,7 @@ export class PlaybackControls {
             this.btnLoop.title = `Loop: ${this.loopMode}`;
             if (this.loopMode === 'bounce') this.btnLoop.textContent = '\u21C4';
             else this.btnLoop.textContent = '\u21BB';
+            if (this.state === 'playing') this._sendConfig();
         };
 
         this.slider.oninput = () => {
@@ -70,7 +72,7 @@ export class PlaybackControls {
         });
     }
 
-    _play() {
+    async _play() {
         if (this.state === 'paused') {
             this.ws.send({ type: 'resume' });
             return;
@@ -78,16 +80,20 @@ export class PlaybackControls {
 
         const route = this.builder.toRoute();
         if (!route.waypoints || route.waypoints.length < 2) return;
+        this.useArrivalTimes = route.waypoints.some(w => w.arrival_time != null);
 
-        fetch('/api/routes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(route),
-        }).then(() => {
+        try {
+            const resp = await fetch('/api/routes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(route),
+            });
+            if (!resp.ok) return;
             this.ws.send({
                 type: 'play',
                 route_name: route.name,
                 speed_mps: this.speed,
+                use_arrival_times: this.useArrivalTimes,
                 loop_mode: this.loopMode,
                 realism: {
                     jitter_enabled: this.jitterToggle.checked,
@@ -95,7 +101,7 @@ export class PlaybackControls {
                     drift_enabled: this.driftToggle.checked,
                 },
             });
-        });
+        } catch {}
     }
 
     _sendConfig() {
@@ -103,6 +109,7 @@ export class PlaybackControls {
             type: 'config',
             config: {
                 speed_mps: this.speed,
+                use_arrival_times: this.useArrivalTimes,
                 loop_mode: this.loopMode,
                 realism: {
                     jitter_enabled: this.jitterToggle.checked,

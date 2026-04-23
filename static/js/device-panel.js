@@ -14,22 +14,29 @@ export class DevicePanel {
             if (devices.length === 0) {
                 this.dot.className = 'device-dot';
                 this.label.textContent = 'No device';
+                this._setClickable(null);
                 return;
             }
             const active = devices.find(d => d.active);
             if (active) {
                 this.dot.className = 'device-dot connected';
                 this.label.textContent = active.name;
+                this._setClickable(null);
             } else {
                 this.dot.className = 'device-dot';
                 this.label.textContent = `${devices.length} device${devices.length > 1 ? 's' : ''} found`;
-                this.label.style.cursor = 'pointer';
-                this.label.onclick = () => this._autoConnect(devices[0].udid);
+                this._setClickable(() => this._autoConnect(devices[0].udid));
             }
         } catch {
             this.dot.className = 'device-dot';
             this.label.textContent = 'No device';
+            this._setClickable(null);
         }
+    }
+
+    _setClickable(handler) {
+        this.label.onclick = handler;
+        this.label.style.cursor = handler ? 'pointer' : 'default';
     }
 
     async _autoConnect(udid) {

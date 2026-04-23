@@ -21,7 +21,8 @@ env/
 
 .claude/
 .claude*
-!CLAUDE.md
+CLAUDE.md
+AGENTS.md
 
 *.log
 .env

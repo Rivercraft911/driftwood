@@ -56,6 +56,13 @@ export class RouteBuilder {
         for (const fn of this._listeners) fn();
     }
 
+    _onGeometryChanged() {
+        this.snappedPath = null;
+        this._updateLine();
+        if (this.snapEnabled && this.waypoints.length >= 2) this.snapToRoads();
+        this._emit();
+    }
+
     addWaypoint(lat, lon) {
         const idx = this.waypoints.length;
         const icon = L.divIcon({
@@ -73,9 +80,7 @@ export class RouteBuilder {
             if (wp) {
                 wp.lat = pos.lat;
                 wp.lon = pos.lng;
-                this._updateLine();
-                if (this.snapEnabled) this.snapToRoads();
-                this._emit();
+                this._onGeometryChanged();
             }
         });
 
@@ -86,9 +91,7 @@ export class RouteBuilder {
             label: null,
         });
 
-        this._updateLine();
-        if (this.snapEnabled && this.waypoints.length >= 2) this.snapToRoads();
-        this._emit();
+        this._onGeometryChanged();
     }
 
     removeWaypoint(index) {
@@ -97,9 +100,7 @@ export class RouteBuilder {
         wp.marker.remove();
         this.waypoints.splice(index, 1);
         this._renumberMarkers();
-        this._updateLine();
-        if (this.snapEnabled && this.waypoints.length >= 2) this.snapToRoads();
-        this._emit();
+        this._onGeometryChanged();
     }
 
     _renumberMarkers() {
@@ -197,8 +198,7 @@ export class RouteBuilder {
                 if (wp) {
                     wp.lat = pos.lat;
                     wp.lon = pos.lng;
-                    this._updateLine();
-                    this._emit();
+                    this._onGeometryChanged();
                 }
             });
             this.waypoints.push({

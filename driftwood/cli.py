@@ -60,34 +60,35 @@ def run(route, speed, loop, bounce):
         from .services.device_manager import DeviceManager
         dm = DeviceManager()
         await dm.start_polling()
-        await asyncio.sleep(2)
-
-        devs = dm.list_devices()
-        if not devs:
-            click.echo("No device connected")
-            return
-
-        await dm.connect(devs[0].udid)
-        click.echo(f"Connected to {devs[0].name}")
-
-        sim = SimulationEngine(r, config)
         try:
-            while True:
-                point = sim.tick(TICK_INTERVAL)
-                if point is None:
-                    if loop_mode == "loop":
-                        sim.reset()
-                        continue
-                    elif loop_mode == "bounce":
-                        sim.reverse()
-                        continue
-                    break
-                await dm.set_location(point.lat, point.lon)
-                pct = sim.progress * 100
-                click.echo(f"\r  {point.lat:.6f}, {point.lon:.6f}  {point.speed:.1f} m/s  {pct:.0f}%", nl=False)
-                await asyncio.sleep(TICK_INTERVAL)
-        except KeyboardInterrupt:
-            pass
+            await asyncio.sleep(2)
+
+            devs = dm.list_devices()
+            if not devs:
+                click.echo("No device connected")
+                return
+
+            await dm.connect(devs[0].udid)
+            click.echo(f"Connected to {devs[0].name}")
+
+            sim = SimulationEngine(r, config)
+            try:
+                while True:
+                    point = sim.tick(TICK_INTERVAL)
+                    if point is None:
+                        if loop_mode == "loop":
+                            sim.reset()
+                            continue
+                        elif loop_mode == "bounce":
+                            sim.reverse()
+                            continue
+                        break
+                    await dm.set_location(point.lat, point.lon)
+                    pct = sim.progress * 100
+                    click.echo(f"\r  {point.lat:.6f}, {point.lon:.6f}  {point.speed:.1f} m/s  {pct:.0f}%", nl=False)
+                    await asyncio.sleep(TICK_INTERVAL)
+            except KeyboardInterrupt:
+                pass
         finally:
             click.echo("\nStopping...")
             await dm.clear_location()

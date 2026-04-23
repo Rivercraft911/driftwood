@@ -11,9 +11,17 @@ driftwood serve
 
 Open [http://127.0.0.1:7777](http://127.0.0.1:7777)
 
-For iOS 17+, run this in a separate terminal first:
+For iOS 17+ (including iOS 26), keep a tunnel running:
 ```bash
-sudo pymobiledevice3 remote start-tunnel
+sudo pymobiledevice3 remote tunneld
+```
+
+If you want one-terminal mode:
+```bash
+sudo pymobiledevice3 remote tunneld >/tmp/driftwood-tunneld.log 2>&1 &
+TUNNEL_PID=$!
+driftwood serve
+kill $TUNNEL_PID
 ```
 
 ## CLI
