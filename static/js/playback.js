@@ -78,6 +78,9 @@ export class PlaybackControls {
             return;
         }
 
+        const deviceReady = await this._ensureDeviceReady();
+        if (!deviceReady) return;
+
         const route = this.builder.toRoute();
         if (!route.waypoints || route.waypoints.length < 2) return;
         this.useArrivalTimes = route.waypoints.some(w => w.arrival_time != null);
@@ -102,6 +105,40 @@ export class PlaybackControls {
                 },
             });
         } catch {}
+    }
+
+    async _ensureDeviceReady() {
+        try {
+            const resp = await fetch('/api/devices');
+            if (!resp.ok) {
+                alert('Could not check connected devices.');
+                return false;
+            }
+
+            const devices = await resp.json();
+            const active = devices.find(d => d.active);
+            if (active) return true;
+
+            if (!devices.length) {
+                alert('No iPhone detected. Connect over USB, unlock it, and tap Trust.');
+                return false;
+            }
+
+            const connectResp = await fetch(`/api/devices/${encodeURIComponent(devices[0].udid)}/select`, {
+                method: 'POST',
+            });
+
+            if (!connectResp.ok) {
+                const err = await connectResp.json().catch(() => ({}));
+                alert(err.detail || 'Failed to connect to iPhone. Make sure tunnel is running.');
+                return false;
+            }
+
+            return true;
+        } catch {
+            alert('Could not verify iPhone connection.');
+            return false;
+        }
     }
 
     _sendConfig() {

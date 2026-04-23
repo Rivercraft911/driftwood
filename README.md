@@ -18,7 +18,8 @@ sudo pymobiledevice3 remote tunneld
 
 If you want one-terminal mode:
 ```bash
-sudo pymobiledevice3 remote tunneld >/tmp/driftwood-tunneld.log 2>&1 &
+sudo -v
+sudo -n "$(which python3)" -m pymobiledevice3 remote tunneld >/tmp/driftwood-tunneld.log 2>&1 &
 TUNNEL_PID=$!
 driftwood serve
 kill $TUNNEL_PID

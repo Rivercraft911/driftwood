@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 from ..models.device import DeviceInfo
 
@@ -38,11 +39,31 @@ class DeviceManager:
         try:
             from pymobiledevice3.usbmux import list_devices
             current = {}
-            for d in list_devices():
-                serial = d.serial
+            devices = list_devices()
+            if inspect.isawaitable(devices):
+                devices = await devices
+
+            for d in devices:
+                serial = (
+                    getattr(d, "serial", None)
+                    or getattr(d, "udid", None)
+                    or getattr(d, "Identifier", None)
+                    or (d.get("Identifier") if isinstance(d, dict) else None)
+                    or (d.get("udid") if isinstance(d, dict) else None)
+                )
+                if not serial:
+                    continue
+
+                name = (
+                    getattr(d, "name", None)
+                    or getattr(d, "DeviceName", None)
+                    or (d.get("DeviceName") if isinstance(d, dict) else None)
+                    or (d.get("name") if isinstance(d, dict) else None)
+                    or serial[:12]
+                )
                 current[serial] = {
                     "udid": serial,
-                    "name": getattr(d, 'name', serial[:12]),
+                    "name": name,
                 }
 
             for udid in set(self._devices) - set(current):
@@ -80,10 +101,17 @@ class DeviceManager:
 
     def _create_connection(self, udid):
         try:
-            from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
             from pymobiledevice3.tunneld import get_tunneld_devices
-            for rsd in get_tunneld_devices():
-                if rsd.udid == udid:
+            rsd_devices = get_tunneld_devices()
+            if inspect.isawaitable(rsd_devices):
+                rsd_devices = asyncio.run(rsd_devices)
+
+            for rsd in rsd_devices:
+                rsd_udid = (
+                    getattr(rsd, "udid", None)
+                    or (rsd.get("udid") if isinstance(rsd, dict) else None)
+                )
+                if rsd_udid == udid:
                     from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
                     from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
                     dvt = DvtSecureSocketProxyService(rsd)

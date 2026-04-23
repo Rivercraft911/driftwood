@@ -1,6 +1,7 @@
 import click
 import json
 import asyncio
+import inspect
 
 
 @click.group()
@@ -22,11 +23,28 @@ def devices():
     from pymobiledevice3.usbmux import list_devices
     try:
         devs = list_devices()
+        if inspect.isawaitable(devs):
+            devs = asyncio.run(devs)
         if not devs:
             click.echo("No devices connected")
             return
         for d in devs:
-            click.echo(f"  {d.serial}  {getattr(d, 'name', 'unknown')}")
+            serial = (
+                getattr(d, "serial", None)
+                or getattr(d, "udid", None)
+                or getattr(d, "Identifier", None)
+                or (d.get("Identifier") if isinstance(d, dict) else None)
+                or (d.get("udid") if isinstance(d, dict) else None)
+                or "unknown"
+            )
+            name = (
+                getattr(d, "name", None)
+                or getattr(d, "DeviceName", None)
+                or (d.get("DeviceName") if isinstance(d, dict) else None)
+                or (d.get("name") if isinstance(d, dict) else None)
+                or "unknown"
+            )
+            click.echo(f"  {serial}  {name}")
     except Exception as e:
         click.echo(f"Error listing devices: {e}")
 
