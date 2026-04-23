@@ -18,6 +18,7 @@
                 <span class="device-dot"></span>
                 <span class="device-label">No device</span>
             </div>
+            <button id="btn-kawaii" class="btn-ghost" title="Toggle kawaii mode">✿</button>
         </div>
     </div>
 
@@ -25,6 +26,7 @@
         <div class="panel-header">
             <h3>Route</h3>
             <div class="route-actions">
+                <button id="btn-fit" title="Fit route in view">Fit</button>
                 <button id="btn-save" title="Save route">Save</button>
                 <button id="btn-load" title="Load route">Load</button>
                 <button id="btn-clear" title="Clear route">Clear</button>
@@ -57,22 +59,22 @@
                 <button id="btn-pause" class="btn-icon" title="Pause" hidden>&#10074;&#10074;</button>
                 <button id="btn-stop" class="btn-icon" title="Stop">&#9632;</button>
             </div>
+            <div id="speed-unit-toggle" class="unit-toggle">
+                <button type="button" class="unit-btn active" data-unit="mph">mph</button>
+                <button type="button" class="unit-btn" data-unit="mps">m/s</button>
+            </div>
             <div class="speed-control">
-                <div id="speed-unit-toggle" class="unit-toggle">
-                    <button type="button" class="unit-btn active" data-unit="mph">mph</button>
-                    <button type="button" class="unit-btn" data-unit="mps">m/s</button>
-                </div>
                 <input type="range" id="speed-slider" min="0.5" max="160" step="0.1" value="3.1">
                 <span id="speed-label">3.1 mph</span>
             </div>
             <div class="speed-presets">
-                <button data-speed="1.4" class="preset active">Walk</button>
-                <button data-speed="2.8" class="preset">Jog</button>
-                <button data-speed="5.5" class="preset">Bike</button>
-                <button data-speed="13.4" class="preset">Drive</button>
+                <button data-speed="1.4" data-min="0.2" data-max="2.7"   class="preset active" data-kawaii="✿">Walk</button>
+                <button data-speed="2.8" data-min="1.5" data-max="6.0"   class="preset"        data-kawaii="❀">Jog</button>
+                <button data-speed="5.5" data-min="3.0" data-max="14.0"  class="preset"        data-kawaii="♡">Bike</button>
+                <button data-speed="13.4" data-min="4.0" data-max="71.53" class="preset"       data-kawaii="✦">Drive</button>
             </div>
             <div class="update-rate-control">
-                <button id="btn-update-rate" class="btn-ghost">Location update rate</button>
+                <button id="btn-update-rate" class="btn-ghost" title="Location push rate">Rate</button>
                 <div id="update-rate-panel" hidden>
                     <input type="range" id="update-rate-slider" min="0.25" max="50" step="0.25" value="0.25">
                     <span id="update-rate-label">0.25s</span>
@@ -80,6 +82,7 @@
             </div>
             <div class="loop-controls">
                 <button id="btn-loop" class="btn-icon" data-mode="none" title="Loop: off">&#8635;</button>
+                <button id="btn-follow" class="btn-icon" title="Auto-follow: off">⊙</button>
             </div>
         </div>
         <div id="stats-bar">

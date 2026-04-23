@@ -87,8 +87,9 @@ class SimulationEngine:
             self._dwell_remaining -= dt
             self.elapsed += dt
             lat, lon = interpolate_along_path(self.path, self.cum_dist, self.distance_covered)
-            lat, lon = self._jitter.apply(lat, lon)
-            return SimPoint(lat=lat, lon=lon, speed=0, heading=self._last_heading)
+            jlat, jlon = self._jitter.apply(lat, lon)
+            return SimPoint(lat=jlat, lon=jlon, speed=0, heading=self._last_heading,
+                            smooth_lat=lat, smooth_lon=lon)
 
         base_speed = self._get_speed()
         eased = self._easing.apply(base_speed, self.distance_covered)
@@ -110,9 +111,10 @@ class SimulationEngine:
 
         lat, lon = interpolate_along_path(self.path, self.cum_dist, self.distance_covered)
         self._last_heading = heading_at(self.path, self.cum_dist, self.distance_covered)
-        lat, lon = self._jitter.apply(lat, lon)
+        jlat, jlon = self._jitter.apply(lat, lon)
 
-        return SimPoint(lat=lat, lon=lon, speed=final_speed, heading=self._last_heading)
+        return SimPoint(lat=jlat, lon=jlon, speed=final_speed, heading=self._last_heading,
+                        smooth_lat=lat, smooth_lon=lon)
 
     def current_point(self, speed=0.0, apply_jitter=True):
         if not self.path:

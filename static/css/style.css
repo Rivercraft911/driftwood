@@ -6,6 +6,7 @@
     --amber: #f59e0b;
     --amber-dim: #b45309;
     --amber-glow: rgba(245, 158, 11, 0.15);
+    --marker-glow: rgba(245, 158, 11, 0.4);
     --text: #e5e7eb;
     --text-dim: #6b7280;
     --text-bright: #f9fafb;
@@ -15,6 +16,114 @@
     --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --radius: 8px;
 }
+
+/* ── Kawaii theme ─────────────────────────────────────────────────────────── */
+/*
+    Palette (Tailwind pink scale):
+      button bg  → pink-200  #fbcfe8  (pastel)
+      accent     → pink-600  #db2777  (4.6:1 on white — readable)
+      btn text   → pink-900  #831843  (6.9:1 on pink-200)
+      secondary  → pink-800  #9d174d  (labels, secondary text)
+      headings   → near-black #1a0015
+*/
+[data-theme="kawaii"] {
+    --bg-dark: #fff0f7;
+    --bg-panel: rgba(255, 246, 252, 0.97);
+    --border: rgba(255, 182, 217, 0.55);
+    --border-bright: rgba(219, 39, 119, 0.55);
+    --amber: #db2777;
+    --amber-dim: #fbcfe8;
+    --amber-glow: rgba(219, 39, 119, 0.1);
+    --marker-glow: rgba(219, 39, 119, 0.35);
+    --text: #3b0030;
+    --text-dim: #9d174d;
+    --text-bright: #1a0015;
+    --danger: #ef4444;
+    --success: #16a34a;
+    /* pink-tinted track for range inputs (replaces invisible white-on-white) */
+    --track-bg: rgba(219, 39, 119, 0.18);
+}
+
+[data-theme="kawaii"] body { background: var(--bg-dark); }
+
+/* Dark text on pastel pink buttons */
+[data-theme="kawaii"] button { color: #831843; }
+
+/* ── Logo flower ── */
+[data-theme="kawaii"] .logo::after {
+    content: '✿';
+    color: #f472b6;
+    font-size: 16px;
+    letter-spacing: 0;       /* don't inherit 2px spacing from .logo */
+    margin-left: 5px;
+    display: inline-block;
+}
+
+/* ── Preset symbols ── */
+[data-theme="kawaii"] .preset[data-kawaii]::after {
+    content: ' ' attr(data-kawaii);
+    color: #f472b6;
+}
+
+/* Active preset/unit text — glow bg is light so color must stay dark */
+[data-theme="kawaii"] .preset.active,
+[data-theme="kawaii"] .unit-btn.active {
+    color: #831843;
+}
+
+/* Speed/rate labels default to var(--amber); use text-dim for contrast */
+[data-theme="kawaii"] #speed-label,
+[data-theme="kawaii"] #update-rate-label {
+    color: var(--text-dim);
+}
+
+/* ── Playback row: tighten gap so emoji-widened presets don't wrap ── */
+[data-theme="kawaii"] .playback-row {
+    gap: 10px;
+}
+
+/* ── Slider tracks (rgba white-on-white invisible → pink track) ── */
+/* !important needed to beat the -webkit-appearance reset specificity */
+[data-theme="kawaii"] .speed-control input[type="range"],
+[data-theme="kawaii"] #update-rate-slider {
+    background: rgba(219, 39, 119, 0.2) !important;
+}
+
+[data-theme="kawaii"] #scrub-bar {
+    background: rgba(219, 39, 119, 0.15) !important;
+}
+
+[data-theme="kawaii"] #scrub-handle {
+    border-color: white;
+}
+
+/* ── Misc surfaces that use white-on-white in dark theme ── */
+[data-theme="kawaii"] .unit-toggle {
+    background: rgba(219, 39, 119, 0.05);
+}
+
+[data-theme="kawaii"] .unit-btn:hover {
+    background: rgba(219, 39, 119, 0.08);
+}
+
+[data-theme="kawaii"] #update-rate-panel {
+    background: rgba(219, 39, 119, 0.05);
+}
+
+[data-theme="kawaii"] .waypoint-item {
+    background: rgba(219, 39, 119, 0.04);
+}
+
+[data-theme="kawaii"] .waypoint-item:hover {
+    background: rgba(219, 39, 119, 0.09);
+}
+
+[data-theme="kawaii"] .leaflet-control-zoom a {
+    background: var(--bg-panel) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+}
+/* ──────────────────────────────────────────────────────────────────────────── */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -62,7 +171,7 @@ body {
     bottom: 16px;
     left: 50%;
     transform: translateX(-50%);
-    width: min(720px, calc(100vw - 320px));
+    width: min(860px, calc(100vw - 320px));
     padding: 8px 16px 12px;
 }
 
@@ -328,7 +437,6 @@ button:disabled { opacity: 0.3; cursor: default; }
     display: flex;
     align-items: center;
     gap: 12px;
-    flex-wrap: wrap;
 }
 
 .playback-controls {
@@ -339,9 +447,9 @@ button:disabled { opacity: 0.3; cursor: default; }
 .speed-control {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     flex: 1;
-    min-width: 260px;
+    min-width: 120px;
 }
 
 .unit-toggle {
@@ -351,6 +459,7 @@ button:disabled { opacity: 0.3; cursor: default; }
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 2px;
+    flex-shrink: 0;
 }
 
 .unit-btn {
@@ -393,8 +502,8 @@ button:disabled { opacity: 0.3; cursor: default; }
 #speed-label {
     font-size: 11px;
     color: var(--amber);
-    min-width: 70px;
-    text-align: right;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .speed-presets {
@@ -422,6 +531,12 @@ button:disabled { opacity: 0.3; cursor: default; }
     color: var(--amber);
 }
 
+.loop-controls {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
 .loop-controls .btn-icon {
     font-size: 16px;
     background: transparent;
@@ -440,6 +555,12 @@ button:disabled { opacity: 0.3; cursor: default; }
     border-color: var(--border-bright);
     color: var(--text);
     background: var(--amber-glow);
+}
+
+#btn-kawaii.active {
+    background: var(--amber-glow);
+    border-color: var(--amber);
+    color: var(--amber);
 }
 
 .update-rate-control {
@@ -653,6 +774,10 @@ button:disabled { opacity: 0.3; cursor: default; }
         width: calc(100vw - 24px);
         left: 12px;
         transform: none;
+    }
+
+    .playback-row {
+        flex-wrap: wrap;
     }
 
     .right {
