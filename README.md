@@ -2,10 +2,6 @@
 
 Draw GPS routes on a map. Walk your iPhone along them in real time over USB. No Xcode, no apps on the phone, no cloud.
 
-- Be the ultimate performative fellow: choreograph your GPS like a stage show.
-- Draw a path, press play, and your iPhone walks it.
-- Local-only GPS puppeteering for demos, testing, and harmless chaos.
-
 ## Setup
 
 ```bash
