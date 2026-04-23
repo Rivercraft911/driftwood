@@ -40,6 +40,18 @@ class SimulationEngine:
         self._last_heading = 0.0
         self._last_wp_crossed = -1
 
+    def _future_dwell_seconds(self):
+        if self.direction < 0:
+            return self._dwell_remaining
+
+        dwell = self._dwell_remaining
+        for i, wd in enumerate(self._wp_path_dists):
+            if i <= self._last_wp_crossed:
+                continue
+            if wd > self.distance_covered and self.waypoints[i].dwell_time:
+                dwell += self.waypoints[i].dwell_time
+        return dwell
+
     def _map_waypoints_to_path(self):
         self._wp_path_dists = []
         for w in self.waypoints:
@@ -102,6 +114,20 @@ class SimulationEngine:
 
         return SimPoint(lat=lat, lon=lon, speed=final_speed, heading=self._last_heading)
 
+    def current_point(self, speed=0.0, apply_jitter=True):
+        if not self.path:
+            return SimPoint(lat=0.0, lon=0.0, speed=speed, heading=self._last_heading)
+        if len(self.path) < 2:
+            lat = self.path[0][0]
+            lon = self.path[0][1]
+            return SimPoint(lat=lat, lon=lon, speed=speed, heading=self._last_heading)
+
+        lat, lon = interpolate_along_path(self.path, self.cum_dist, self.distance_covered)
+        heading = heading_at(self.path, self.cum_dist, self.distance_covered)
+        if apply_jitter:
+            lat, lon = self._jitter.apply(lat, lon)
+        return SimPoint(lat=lat, lon=lon, speed=speed, heading=heading)
+
     def _check_waypoint_crossing(self, old_dist, new_dist):
         for i, wd in enumerate(self._wp_path_dists):
             if i <= self._last_wp_crossed:
@@ -121,6 +147,73 @@ class SimulationEngine:
             if wd <= self.distance_covered:
                 self._last_wp_crossed = i
 
+    def nearest_path_distance(self, lat, lon):
+        if not self.path:
+            return 0.0
+
+        best_idx = 0
+        best_delta = float("inf")
+        for i, p in enumerate(self.path):
+            d = haversine([lat, lon], p)
+            if d < best_delta:
+                best_delta = d
+                best_idx = i
+        return self.cum_dist[best_idx]
+
+    def snap_to_nearest(self, lat, lon):
+        if self.total_distance <= 0:
+            self.scrub_to(0.0)
+            return
+        nearest = self.nearest_path_distance(lat, lon)
+        self.scrub_to(nearest / self.total_distance)
+
+    def estimate_remaining_seconds(self, speed_mps):
+        if self.direction > 0:
+            remaining_distance = max(0.0, self.total_distance - self.distance_covered)
+        else:
+            remaining_distance = max(0.0, self.distance_covered)
+
+        if remaining_distance <= 0:
+            return 0.0
+
+        if self.config.use_arrival_times and self.segment_speeds and self.direction > 0:
+            return self._estimate_scheduled_remaining(speed_mps)
+
+        base_speed = speed_mps if speed_mps and speed_mps > 0 else self.config.speed_mps
+        return self._future_dwell_seconds() + remaining_distance / max(0.1, base_speed)
+
+    def _estimate_scheduled_remaining(self, fallback_speed_mps):
+        remaining = self._dwell_remaining
+        current_distance = self.distance_covered
+        current_segment = self.current_segment
+        last_segment = len(self.waypoints) - 2
+
+        if last_segment < 0:
+            return remaining
+
+        for seg in range(current_segment, last_segment + 1):
+            seg_start = self._wp_path_dists[seg]
+            seg_end = self._wp_path_dists[seg + 1]
+            if seg_end <= current_distance:
+                continue
+
+            if seg == current_segment:
+                seg_dist = seg_end - max(current_distance, seg_start)
+            else:
+                seg_dist = seg_end - seg_start
+
+            speed = self.segment_speeds[seg] if seg < len(self.segment_speeds) else None
+            if speed is None or speed <= 0:
+                speed = fallback_speed_mps if fallback_speed_mps and fallback_speed_mps > 0 else self.config.speed_mps
+            remaining += seg_dist / max(0.1, speed)
+
+            wp_idx = seg + 1
+            dwell = self.waypoints[wp_idx].dwell_time
+            if dwell and wp_idx > self._last_wp_crossed:
+                remaining += dwell
+
+        return max(0.0, remaining)
+
     def reset(self):
         self.distance_covered = 0.0
         self.elapsed = 0.0
@@ -132,6 +225,10 @@ class SimulationEngine:
 
     def update_config(self, config):
         self.config = config
+        if config.use_arrival_times:
+            self.segment_speeds = derive_segment_speeds(self.waypoints, self.waypoint_distances)
+        else:
+            self.segment_speeds = None
         self._jitter.enabled = config.realism.jitter_enabled
         self._jitter.radius_m = config.realism.jitter_radius_m
         self._easing.enabled = config.realism.easing_enabled

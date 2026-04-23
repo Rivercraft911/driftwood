@@ -17,6 +17,8 @@ const playback = new PlaybackControls(ws, builder);
 const device = new DevicePanel(ws);
 const stats = new StatsDisplay();
 const gpx = new GpxHandler(builder);
+stats.setSpeedUnit(playback.getSpeedUnit());
+playback.onSpeedUnitChange = (unit) => stats.setSpeedUnit(unit);
 
 const overlay = document.getElementById('modal-overlay');
 const modalContent = document.getElementById('modal-content');
@@ -51,6 +53,7 @@ snapToggle.onchange = () => {
     } else {
         builder.snappedPath = null;
         builder._updateLine();
+        builder.notifyMetadataChanged();
     }
 };
 

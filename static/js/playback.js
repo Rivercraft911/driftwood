@@ -1,11 +1,20 @@
+import { mpsToMph, mphToMps } from './utils.js';
+
+const MIN_SPEED_MPS = 0.1;
+const MAX_SPEED_MPS = 71.53;
+
 export class PlaybackControls {
     constructor(ws, builder) {
         this.ws = ws;
         this.builder = builder;
         this.state = 'idle';
         this.loopMode = 'none';
-        this.speed = 1.4;
+        this.speedMps = 1.4;
+        this.speedUnit = localStorage.getItem('driftwood_speed_unit') === 'mps' ? 'mps' : 'mph';
         this.useArrivalTimes = false;
+        this.deviceUpdateInterval = 0.25;
+        this._routeUpdateTimer = null;
+        this.onSpeedUnitChange = null;
 
         this.btnPlay = document.getElementById('btn-play');
         this.btnPause = document.getElementById('btn-pause');
@@ -17,12 +26,25 @@ export class PlaybackControls {
         this.scrubProgress = document.getElementById('scrub-progress');
         this.scrubHandle = document.getElementById('scrub-handle');
         this.presets = document.querySelectorAll('.preset');
+        this.unitButtons = document.querySelectorAll('.unit-btn');
+
+        this.btnUpdateRate = document.getElementById('btn-update-rate');
+        this.updateRatePanel = document.getElementById('update-rate-panel');
+        this.updateRateSlider = document.getElementById('update-rate-slider');
+        this.updateRateLabel = document.getElementById('update-rate-label');
 
         this.jitterToggle = document.getElementById('jitter-toggle');
         this.easingToggle = document.getElementById('easing-toggle');
         this.driftToggle = document.getElementById('drift-toggle');
 
         this._bindEvents();
+        this._renderSpeed();
+        this._renderUpdateRate();
+        this.builder.onChange(() => this._scheduleRouteUpdate());
+    }
+
+    getSpeedUnit() {
+        return this.speedUnit;
     }
 
     _bindEvents() {
@@ -38,38 +60,141 @@ export class PlaybackControls {
             this.btnLoop.title = `Loop: ${this.loopMode}`;
             if (this.loopMode === 'bounce') this.btnLoop.textContent = '\u21C4';
             else this.btnLoop.textContent = '\u21BB';
-            if (this.state === 'playing') this._sendConfig();
+            if (this._isConfigLive()) this._sendConfig();
         };
 
         this.slider.oninput = () => {
-            this.speed = parseFloat(this.slider.value);
-            this.speedLabel.textContent = `${this.speed.toFixed(1)} m/s`;
-            this._updatePresetHighlight();
-            if (this.state === 'playing') this._sendConfig();
+            const raw = parseFloat(this.slider.value);
+            this.speedMps = this._normalizeSpeed(this._fromDisplaySpeed(raw));
+            this._renderSpeed();
+            if (this._isConfigLive()) this._sendConfig();
         };
 
         this.presets.forEach(btn => {
             btn.onclick = () => {
-                this.speed = parseFloat(btn.dataset.speed);
-                this.slider.value = this.speed;
-                this.speedLabel.textContent = `${this.speed.toFixed(1)} m/s`;
-                this._updatePresetHighlight();
-                if (this.state === 'playing') this._sendConfig();
+                this.speedMps = this._normalizeSpeed(parseFloat(btn.dataset.speed));
+                this._renderSpeed();
+                if (this._isConfigLive()) this._sendConfig();
             };
+        });
+
+        this.unitButtons.forEach(btn => {
+            btn.onclick = () => {
+                const unit = btn.dataset.unit === 'mps' ? 'mps' : 'mph';
+                this._setSpeedUnit(unit);
+            };
+        });
+
+        this.btnUpdateRate.onclick = () => {
+            this.updateRatePanel.hidden = !this.updateRatePanel.hidden;
+        };
+
+        this.updateRateSlider.oninput = () => {
+            this.deviceUpdateInterval = this._normalizeUpdateInterval(parseFloat(this.updateRateSlider.value));
+            this._renderUpdateRate();
+            if (this._isConfigLive()) this._sendConfig();
+        };
+
+        document.addEventListener('click', (e) => {
+            if (this.updateRatePanel.hidden) return;
+            if (e.target === this.btnUpdateRate || this.updateRatePanel.contains(e.target)) return;
+            this.updateRatePanel.hidden = true;
         });
 
         this._setupScrub();
 
         [this.jitterToggle, this.easingToggle, this.driftToggle].forEach(t => {
-            t.onchange = () => { if (this.state === 'playing') this._sendConfig(); };
+            t.onchange = () => {
+                if (this._isConfigLive()) this._sendConfig();
+            };
         });
+    }
+
+    _isConfigLive() {
+        return this.state === 'playing' || this.state === 'paused';
+    }
+
+    _normalizeSpeed(mps) {
+        return Math.max(MIN_SPEED_MPS, Math.min(MAX_SPEED_MPS, mps));
+    }
+
+    _normalizeUpdateInterval(seconds) {
+        return Math.max(0.25, Math.min(50.0, seconds));
+    }
+
+    _toDisplaySpeed(mps) {
+        return this.speedUnit === 'mph' ? mpsToMph(mps) : mps;
+    }
+
+    _fromDisplaySpeed(value) {
+        return this.speedUnit === 'mph' ? mphToMps(value) : value;
+    }
+
+    _speedBounds() {
+        if (this.speedUnit === 'mph') return { min: 0.5, max: 160, step: 0.1 };
+        return { min: 0.1, max: 71.5, step: 0.1 };
+    }
+
+    _formatSpeedLabel() {
+        const display = this._toDisplaySpeed(this.speedMps);
+        const suffix = this.speedUnit === 'mph' ? 'mph' : 'm/s';
+        return `${display.toFixed(1)} ${suffix}`;
+    }
+
+    _formatUpdateRateLabel(seconds) {
+        if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
+        if (seconds >= 10) return `${seconds.toFixed(0)}s`;
+        const rounded = Math.round(seconds * 100) / 100;
+        return `${rounded.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}s`;
+    }
+
+    _setSpeedUnit(unit) {
+        if (unit === this.speedUnit) return;
+        this.speedUnit = unit;
+        localStorage.setItem('driftwood_speed_unit', this.speedUnit);
+        this._renderSpeed();
+    }
+
+    _renderSpeed() {
+        const bounds = this._speedBounds();
+        this.slider.min = String(bounds.min);
+        this.slider.max = String(bounds.max);
+        this.slider.step = String(bounds.step);
+        this.slider.value = this._toDisplaySpeed(this.speedMps).toFixed(1);
+        this.speedLabel.textContent = this._formatSpeedLabel();
+
+        this.unitButtons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.unit === this.speedUnit);
+        });
+
+        this._updatePresetHighlight();
+        if (typeof this.onSpeedUnitChange === 'function') this.onSpeedUnitChange(this.speedUnit);
+    }
+
+    _renderUpdateRate() {
+        this.updateRateSlider.value = this.deviceUpdateInterval.toString();
+        this.updateRateLabel.textContent = this._formatUpdateRateLabel(this.deviceUpdateInterval);
     }
 
     _updatePresetHighlight() {
         this.presets.forEach(btn => {
-            const s = parseFloat(btn.dataset.speed);
-            btn.classList.toggle('active', Math.abs(s - this.speed) < 0.2);
+            const presetMps = parseFloat(btn.dataset.speed);
+            btn.classList.toggle('active', Math.abs(presetMps - this.speedMps) < 0.2);
         });
+    }
+
+    _buildConfig() {
+        return {
+            speed_mps: this.speedMps,
+            use_arrival_times: this.useArrivalTimes,
+            loop_mode: this.loopMode,
+            device_update_interval_s: this.deviceUpdateInterval,
+            realism: {
+                jitter_enabled: this.jitterToggle.checked,
+                easing_enabled: this.easingToggle.checked,
+                drift_enabled: this.driftToggle.checked,
+            },
+        };
     }
 
     async _play() {
@@ -95,14 +220,7 @@ export class PlaybackControls {
             this.ws.send({
                 type: 'play',
                 route_name: route.name,
-                speed_mps: this.speed,
-                use_arrival_times: this.useArrivalTimes,
-                loop_mode: this.loopMode,
-                realism: {
-                    jitter_enabled: this.jitterToggle.checked,
-                    easing_enabled: this.easingToggle.checked,
-                    drift_enabled: this.driftToggle.checked,
-                },
+                ...this._buildConfig(),
             });
         } catch {}
     }
@@ -144,16 +262,26 @@ export class PlaybackControls {
     _sendConfig() {
         this.ws.send({
             type: 'config',
-            config: {
-                speed_mps: this.speed,
-                use_arrival_times: this.useArrivalTimes,
-                loop_mode: this.loopMode,
-                realism: {
-                    jitter_enabled: this.jitterToggle.checked,
-                    easing_enabled: this.easingToggle.checked,
-                    drift_enabled: this.driftToggle.checked,
-                },
-            },
+            config: this._buildConfig(),
+        });
+    }
+
+    _scheduleRouteUpdate() {
+        if (!this._isConfigLive()) return;
+        clearTimeout(this._routeUpdateTimer);
+        this._routeUpdateTimer = setTimeout(() => {
+            this._sendRouteUpdate();
+        }, 120);
+    }
+
+    _sendRouteUpdate() {
+        const route = this.builder.toRoute();
+        if (!route.waypoints || route.waypoints.length < 2) return;
+        this.useArrivalTimes = route.waypoints.some(w => w.arrival_time != null);
+        this.ws.send({
+            type: 'route_update',
+            route,
+            config: this._buildConfig(),
         });
     }
 
@@ -193,6 +321,7 @@ export class PlaybackControls {
         this.btnPause.hidden = this.state !== 'playing';
 
         if (this.state === 'idle') {
+            clearTimeout(this._routeUpdateTimer);
             this.updateProgress(0);
         }
     }

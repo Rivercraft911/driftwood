@@ -1,4 +1,15 @@
-export function formatSpeed(mps) {
+export const MPH_PER_MPS = 2.2369362920544;
+
+export function mpsToMph(mps) {
+    return mps * MPH_PER_MPS;
+}
+
+export function mphToMps(mph) {
+    return mph / MPH_PER_MPS;
+}
+
+export function formatSpeed(mps, unit = 'mps') {
+    if (unit === 'mph') return `${mpsToMph(mps).toFixed(1)} mph`;
     return `${mps.toFixed(1)} m/s`;
 }
 

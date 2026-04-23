@@ -7,6 +7,7 @@ export class RouteBuilder {
         this.snapEnabled = false;
         this._routeName = 'untitled';
         this._listeners = [];
+        this._snapRequestId = 0;
         this._markerIcon = L.divIcon({
             className: 'waypoint-marker',
             html: '',
@@ -56,10 +57,14 @@ export class RouteBuilder {
         for (const fn of this._listeners) fn();
     }
 
+    notifyMetadataChanged() {
+        this._emit();
+    }
+
     _onGeometryChanged() {
         this.snappedPath = null;
         this._updateLine();
-        if (this.snapEnabled && this.waypoints.length >= 2) this.snapToRoads();
+        if (this.snapEnabled && this.waypoints.length >= 2) void this.snapToRoads();
         this._emit();
     }
 
@@ -137,21 +142,56 @@ export class RouteBuilder {
 
     async snapToRoads() {
         if (this.waypoints.length < 2) return;
-        const coords = this.waypoints.map(w => `${w.lon},${w.lat}`).join(';');
+        const reqId = ++this._snapRequestId;
+        const snapped = [];
+
+        for (let i = 0; i < this.waypoints.length - 1; i++) {
+            const a = this.waypoints[i];
+            const b = this.waypoints[i + 1];
+            const segment = await this._snapSegment(a, b);
+            if (reqId !== this._snapRequestId) return;
+
+            const fallback = [[a.lat, a.lon], [b.lat, b.lon]];
+            this._appendSegment(snapped, segment && segment.length >= 2 ? segment : fallback);
+        }
+
+        if (reqId !== this._snapRequestId) return;
+        this.snappedPath = snapped.length >= 2 ? snapped : null;
+        this._updateLine();
+        this._emit();
+    }
+
+    async _snapSegment(a, b) {
+        const coords = `${a.lon},${a.lat};${b.lon},${b.lat}`;
         try {
-            const resp = await fetch(`/api/proxy/osrm/route?coords=${coords}`);
+            const resp = await fetch(`/api/proxy/osrm/route?coords=${encodeURIComponent(coords)}`);
+            if (!resp.ok) return null;
             const data = await resp.json();
-            if (data.routes && data.routes[0]) {
-                const geom = data.routes[0].geometry.coordinates;
-                this.snappedPath = geom.map(c => [c[1], c[0]]);
-                this._updateLine();
-            }
-        } catch (e) {
-            console.warn('OSRM snap failed:', e);
+            if (!data.routes || !data.routes[0] || !data.routes[0].geometry) return null;
+            const geom = data.routes[0].geometry.coordinates;
+            return geom.map(c => [c[1], c[0]]);
+        } catch {
+            return null;
+        }
+    }
+
+    _appendSegment(target, segment) {
+        if (!segment || segment.length === 0) return;
+        if (target.length === 0) {
+            target.push(...segment);
+            return;
+        }
+        const [lastLat, lastLon] = target[target.length - 1];
+        const [firstLat, firstLon] = segment[0];
+        if (Math.abs(lastLat - firstLat) < 1e-9 && Math.abs(lastLon - firstLon) < 1e-9) {
+            target.push(...segment.slice(1));
+        } else {
+            target.push(...segment);
         }
     }
 
     clearRoute() {
+        this._snapRequestId++;
         for (const wp of this.waypoints) wp.marker.remove();
         this.waypoints = [];
         this.snappedPath = null;
@@ -164,15 +204,30 @@ export class RouteBuilder {
     }
 
     toRoute() {
+        let dayOffset = 0;
+        let previousArrival = null;
+
         return {
             name: this._routeName,
-            waypoints: this.waypoints.map(w => ({
-                lat: w.lat,
-                lon: w.lon,
-                arrival_time: w.arrivalTime,
-                dwell_time: w.dwellTime,
-                label: w.label,
-            })),
+            waypoints: this.waypoints.map(w => {
+                let arrival = w.arrivalTime;
+                if (arrival != null) {
+                    let absolute = arrival + dayOffset * 86400;
+                    if (previousArrival != null && absolute < previousArrival) {
+                        while (absolute < previousArrival) absolute += 86400;
+                        dayOffset = Math.floor(absolute / 86400);
+                    }
+                    previousArrival = absolute;
+                    arrival = absolute;
+                }
+                return {
+                    lat: w.lat,
+                    lon: w.lon,
+                    arrival_time: arrival,
+                    dwell_time: w.dwellTime,
+                    label: w.label,
+                };
+            }),
             snapped_path: this.snappedPath,
         };
     }
@@ -203,8 +258,8 @@ export class RouteBuilder {
             });
             this.waypoints.push({
                 lat: w.lat, lon: w.lon, marker,
-                arrivalTime: w.arrival_time || null,
-                dwellTime: w.dwell_time || null,
+                arrivalTime: w.arrival_time == null ? null : ((w.arrival_time % 86400) + 86400) % 86400,
+                dwellTime: w.dwell_time ?? null,
                 label: w.label || null,
             });
         }

@@ -262,7 +262,7 @@ button:disabled { opacity: 0.3; cursor: default; }
 }
 
 .waypoint-timing input {
-    width: 70px;
+    width: 78px;
     background: rgba(255,255,255,0.05);
     border: 1px solid var(--border);
     border-radius: 3px;
@@ -275,6 +275,10 @@ button:disabled { opacity: 0.3; cursor: default; }
 .waypoint-timing input:focus {
     outline: none;
     border-color: var(--amber);
+}
+
+.waypoint-timing input[data-field="arrival"] {
+    width: 92px;
 }
 
 .empty-state {
@@ -324,6 +328,7 @@ button:disabled { opacity: 0.3; cursor: default; }
     display: flex;
     align-items: center;
     gap: 12px;
+    flex-wrap: wrap;
 }
 
 .playback-controls {
@@ -336,6 +341,34 @@ button:disabled { opacity: 0.3; cursor: default; }
     align-items: center;
     gap: 8px;
     flex: 1;
+    min-width: 260px;
+}
+
+.unit-toggle {
+    display: flex;
+    gap: 2px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px;
+}
+
+.unit-btn {
+    background: transparent;
+    color: var(--text-dim);
+    border: none;
+    padding: 3px 7px;
+    font-size: 10px;
+    border-radius: 4px;
+}
+
+.unit-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.unit-btn.active {
+    background: var(--amber-glow);
+    color: var(--amber);
 }
 
 .speed-control input[type="range"] {
@@ -360,7 +393,7 @@ button:disabled { opacity: 0.3; cursor: default; }
 #speed-label {
     font-size: 11px;
     color: var(--amber);
-    min-width: 55px;
+    min-width: 70px;
     text-align: right;
 }
 
@@ -394,6 +427,66 @@ button:disabled { opacity: 0.3; cursor: default; }
     background: transparent;
     color: var(--text-dim);
     border: 1px solid var(--border);
+}
+
+.btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 3px 8px;
+}
+
+.btn-ghost:hover {
+    border-color: var(--border-bright);
+    color: var(--text);
+    background: var(--amber-glow);
+}
+
+.update-rate-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    position: relative;
+}
+
+#update-rate-panel {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 6px;
+}
+
+#update-rate-panel[hidden] {
+    display: none;
+}
+
+#update-rate-slider {
+    width: 130px;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    outline: none;
+}
+
+#update-rate-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--amber);
+    cursor: pointer;
+}
+
+#update-rate-label {
+    font-size: 10px;
+    color: var(--amber);
+    min-width: 34px;
+    text-align: right;
 }
 
 .loop-controls .btn-icon.active {
@@ -554,3 +647,21 @@ button:disabled { opacity: 0.3; cursor: default; }
 .right::-webkit-scrollbar { width: 4px; }
 .right::-webkit-scrollbar-track { background: transparent; }
 .right::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+@media (max-width: 920px) {
+    .bottom {
+        width: calc(100vw - 24px);
+        left: 12px;
+        transform: none;
+    }
+
+    .right {
+        width: min(280px, calc(100vw - 24px));
+        max-height: 42vh;
+    }
+
+    #stats-bar {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+}

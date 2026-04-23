@@ -12,9 +12,10 @@ class RealismConfig(BaseModel):
 
 
 class PlaybackConfig(BaseModel):
-    speed_mps: float = 1.4
+    speed_mps: float = Field(default=1.4, ge=0.1, le=71.53)
     use_arrival_times: bool = False
     loop_mode: str = "none"
+    device_update_interval_s: float = Field(default=0.25, ge=0.25, le=50.0)
     realism: RealismConfig = Field(default_factory=RealismConfig)
 
 
@@ -33,4 +34,5 @@ class PlaybackStatus(BaseModel):
     speed_mps: float = 0.0
     distance_m: float = 0.0
     total_distance_m: float = 0.0
+    remaining_s: float = 0.0
     config: Optional[PlaybackConfig] = None

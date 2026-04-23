@@ -3,6 +3,7 @@ from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from typing import Optional
 from ..models.playback import PlaybackConfig, RealismConfig
+from ..models.route import Route
 
 router = APIRouter()
 
@@ -12,6 +13,7 @@ class PlayRequest(BaseModel):
     speed_mps: float = 1.4
     use_arrival_times: bool = False
     loop_mode: str = "none"
+    device_update_interval_s: float = 0.25
     realism: Optional[RealismConfig] = None
 
 
@@ -36,6 +38,7 @@ async def play(req: PlayRequest, request: Request):
         speed_mps=req.speed_mps,
         use_arrival_times=req.use_arrival_times,
         loop_mode=req.loop_mode,
+        device_update_interval_s=req.device_update_interval_s,
         realism=req.realism or RealismConfig(),
     )
     await request.app.state.playback.play(route, config)
@@ -88,33 +91,52 @@ async def ws_endpoint(websocket: WebSocket):
     try:
         while True:
             raw = await websocket.receive_text()
-            msg = json.loads(raw)
-            msg_type = msg.get("type")
+            try:
+                msg = json.loads(raw)
+                msg_type = msg.get("type")
 
-            if msg_type == "play":
-                store = websocket.app.state.route_store
-                route = store.get_route(msg["route_name"])
-                if route:
-                    config = PlaybackConfig(
-                        speed_mps=msg.get("speed_mps", 1.4),
-                        use_arrival_times=msg.get("use_arrival_times", False),
-                        loop_mode=msg.get("loop_mode", "none"),
-                        realism=RealismConfig(**(msg.get("realism") or {})),
-                    )
-                    await playback.play(route, config)
-            elif msg_type == "pause":
-                await playback.pause()
-            elif msg_type == "resume":
-                await playback.resume()
-            elif msg_type == "stop":
-                await playback.stop()
-            elif msg_type == "scrub":
-                await playback.scrub(msg["progress"])
-            elif msg_type == "config":
-                config = PlaybackConfig(**msg.get("config", {}))
-                await playback.update_config(config)
+                if msg_type == "play":
+                    store = websocket.app.state.route_store
+                    route = store.get_route(msg["route_name"])
+                    if route:
+                        config = PlaybackConfig(
+                            speed_mps=msg.get("speed_mps", 1.4),
+                            use_arrival_times=msg.get("use_arrival_times", False),
+                            loop_mode=msg.get("loop_mode", "none"),
+                            device_update_interval_s=msg.get("device_update_interval_s", 0.25),
+                            realism=RealismConfig(**(msg.get("realism") or {})),
+                        )
+                        await playback.play(route, config)
+                elif msg_type == "pause":
+                    await playback.pause()
+                elif msg_type == "resume":
+                    await playback.resume()
+                elif msg_type == "stop":
+                    await playback.stop()
+                elif msg_type == "scrub":
+                    await playback.scrub(msg["progress"])
+                elif msg_type == "config":
+                    config = PlaybackConfig(**msg.get("config", {}))
+                    await playback.update_config(config)
+                elif msg_type == "route_update":
+                    route_payload = msg.get("route")
+                    if not route_payload:
+                        continue
+                    route = Route.model_validate(route_payload)
+                    if len(route.waypoints) < 2:
+                        continue
+                    config_payload = msg.get("config")
+                    if config_payload is not None:
+                        config = PlaybackConfig(**config_payload)
+                        await playback.update_config(config)
+                    await playback.update_route(route)
+            except Exception as e:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": str(e),
+                })
 
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
         playback.remove_ws(websocket)
