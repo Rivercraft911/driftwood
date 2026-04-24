@@ -399,12 +399,12 @@ class MapboxMapAdapter {
             this._map.addSource(TERRAIN_SOURCE_ID, {
                 type: 'raster-dem',
                 url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
-                tileSize: 512,
-                maxzoom: 14,
+                tileSize: 256,
+                maxzoom: 13,
             });
         }
         if (this._map.setTerrain) {
-            this._map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: 1.35 });
+            this._map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: 1.15 });
         }
     }
 

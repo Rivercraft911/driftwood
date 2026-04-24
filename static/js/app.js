@@ -108,6 +108,27 @@ const pitchSlider = document.getElementById('pitch-slider');
 let threeDEnabled = localStorage.getItem('driftwood_3d') === 'on';
 let threeDPitch = Number(localStorage.getItem('driftwood_3d_pitch') || pitchSlider.value || 60);
 if (!Number.isFinite(threeDPitch)) threeDPitch = 60;
+function clamp3DPitch(value) {
+    return Math.max(0, Math.min(80, value));
+}
+function persist3DPitch() {
+    pitchSlider.value = String(Math.round(threeDPitch));
+    localStorage.setItem('driftwood_3d_pitch', String(threeDPitch));
+}
+function set3DEnabled(enabled) {
+    threeDEnabled = enabled;
+    localStorage.setItem('driftwood_3d', enabled ? 'on' : 'off');
+    map.set3DMode(enabled, threeDPitch);
+    update3DControls();
+}
+function updatePitchFromWheel(e) {
+    const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    if (!delta) return;
+    const modeScale = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 8 : (e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? 24 : 1);
+    threeDPitch = clamp3DPitch(threeDPitch - delta * modeScale * 0.08);
+    persist3DPitch();
+    map.setPitch(threeDPitch);
+}
 pitchSlider.value = String(threeDPitch);
 map.setPitch(threeDPitch);
 map.set3DMode(threeDEnabled, threeDPitch);
@@ -118,16 +139,27 @@ function update3DControls() {
     pitchControl.classList.toggle('active', threeDEnabled);
 }
 btn3D.onclick = () => {
-    threeDEnabled = !threeDEnabled;
-    localStorage.setItem('driftwood_3d', threeDEnabled ? 'on' : 'off');
-    map.set3DMode(threeDEnabled, threeDPitch);
-    update3DControls();
+    set3DEnabled(!threeDEnabled);
 };
 pitchSlider.oninput = () => {
-    threeDPitch = Number(pitchSlider.value);
-    localStorage.setItem('driftwood_3d_pitch', String(threeDPitch));
+    threeDPitch = clamp3DPitch(Number(pitchSlider.value));
+    persist3DPitch();
     map.setPitch(threeDPitch);
 };
+let shiftHeld = false;
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Shift') shiftHeld = true;
+});
+document.addEventListener('keyup', (e) => {
+    if (e.key === 'Shift') shiftHeld = false;
+});
+document.getElementById('map').addEventListener('wheel', (e) => {
+    if ((!e.shiftKey && !shiftHeld) || e.target.closest('.mapboxgl-ctrl')) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (!threeDEnabled) set3DEnabled(true);
+    updatePitchFromWheel(e);
+}, { capture: true, passive: false });
 update3DControls();
 const btnRouteProvider = document.getElementById('btn-route-provider');
 function updateRouteProviderButton() {
