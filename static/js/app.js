@@ -198,7 +198,8 @@ document.addEventListener('keyup', (e) => {
 document.getElementById('map').addEventListener('wheel', (e) => {
     const wantsPitch = e.shiftKey || shiftHeld;
     const wantsOrbit = e.metaKey || metaHeld;
-    if ((!wantsPitch && !wantsOrbit) || e.target.closest('.mapboxgl-ctrl')) return;
+    const target = e.target instanceof Element ? e.target : null;
+    if ((!wantsPitch && !wantsOrbit) || target?.closest('.mapboxgl-ctrl')) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     if (!threeDEnabled) set3DEnabled(true);

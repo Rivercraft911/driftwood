@@ -5,6 +5,8 @@ const DEFAULT_STYLES = {
 const DEFAULT_3D_PITCH = 60;
 const DEFAULT_3D_BEARING = -22;
 const TERRAIN_SOURCE_ID = 'driftwood-mapbox-dem';
+const LINE_SOURCE_PREFIX = 'driftwood-line-source-';
+const LINE_LAYER_PREFIX = 'driftwood-line-layer-';
 
 let lineId = 0;
 
@@ -41,6 +43,19 @@ function normalizeBearing(value) {
     return ((((n + 180) % 360) + 360) % 360) - 180;
 }
 
+function cssVar(name, fallback) {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value || fallback;
+}
+
+function markerOffset(icon = {}) {
+    if (!Array.isArray(icon.iconSize) || !Array.isArray(icon.iconAnchor)) return [0, 0];
+    return [
+        Number(icon.iconSize[0]) / 2 - Number(icon.iconAnchor[0]),
+        Number(icon.iconSize[1]) / 2 - Number(icon.iconAnchor[1]),
+    ];
+}
+
 class LatLngBounds {
     constructor(coords = []) {
         this._coords = [];
@@ -73,6 +88,10 @@ class MapboxMarker {
             element: this._element,
             draggable: Boolean(this._options.draggable),
             anchor: 'center',
+            offset: markerOffset(this._icon),
+            pitchAlignment: 'viewport',
+            rotationAlignment: 'viewport',
+            occludedOpacity: 1,
         })
             .setLngLat([this._latlng.lng, this._latlng.lat])
             .addTo(map._map);
@@ -132,6 +151,7 @@ class MapboxMarker {
             this._element.style.width = `${icon.iconSize[0]}px`;
             this._element.style.height = `${icon.iconSize[1]}px`;
         }
+        if (this._marker?.setOffset) this._marker.setOffset(markerOffset(icon));
     }
 }
 
@@ -140,8 +160,8 @@ class MapboxPolyline {
         this._coords = coords;
         this._options = options;
         this._map = null;
-        this._sourceId = `driftwood-line-source-${++lineId}`;
-        this._layerId = `driftwood-line-layer-${lineId}`;
+        this._sourceId = `${LINE_SOURCE_PREFIX}${++lineId}`;
+        this._layerId = `${LINE_LAYER_PREFIX}${lineId}`;
     }
 
     addTo(map) {
@@ -168,7 +188,9 @@ class MapboxPolyline {
 
     paint() {
         return {
-            'line-color': this._options.color || '#f59e0b',
+            'line-color': this._options.colorVar
+                ? cssVar(this._options.colorVar, this._options.color || '#f59e0b')
+                : this._options.color || '#f59e0b',
             'line-width': this._options.weight || 3,
             'line-opacity': this._options.opacity ?? 1,
             'line-emissive-strength': 1,
@@ -225,7 +247,7 @@ class MapboxMapAdapter {
             this._applyStandardConfig();
             this._applyTerrain();
             this._apply3DCamera(false);
-            this._removePendingLineArtifacts();
+            this._pruneLineArtifacts();
             for (const line of this._lineOverlays) this._renderLine(line);
         });
         this._map.on('click', (event) => {
@@ -344,7 +366,7 @@ class MapboxMapAdapter {
 
     _renderLine(line) {
         if (!this._map || !this._map.isStyleLoaded()) return;
-        this._removePendingLineArtifacts();
+        this._pruneLineArtifacts();
         if (this._map.getSource(line._sourceId)) {
             this._map.getSource(line._sourceId).setData(line.geojson());
             if (this._map.getLayer(line._layerId)) {
@@ -364,12 +386,35 @@ class MapboxMapAdapter {
             type: 'line',
             source: line._sourceId,
             slot: 'top',
+            metadata: { driftwood: 'line' },
             layout: {
                 'line-cap': 'round',
                 'line-join': 'round',
             },
             paint: line.paint(),
         });
+    }
+
+    _pruneLineArtifacts() {
+        if (!this._map || !this._map.isStyleLoaded()) return;
+        const style = this._map.getStyle?.();
+        if (!style) return;
+
+        const activeLayers = new Set([...this._lineOverlays].map(line => line._layerId));
+        const activeSources = new Set([...this._lineOverlays].map(line => line._sourceId));
+
+        for (const layer of style.layers || []) {
+            if (layer.id?.startsWith(LINE_LAYER_PREFIX) && !activeLayers.has(layer.id)) {
+                this._pendingLayerRemovals.add(layer.id);
+            }
+        }
+        for (const sourceId of Object.keys(style.sources || {})) {
+            if (sourceId.startsWith(LINE_SOURCE_PREFIX) && !activeSources.has(sourceId)) {
+                this._pendingSourceRemovals.add(sourceId);
+            }
+        }
+
+        this._removePendingLineArtifacts();
     }
 
     _removePendingLineArtifacts() {

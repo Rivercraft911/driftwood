@@ -168,19 +168,14 @@ export class RouteBuilder {
         });
     }
 
-    _accent() {
-        return getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() || '#f59e0b';
-    }
-
     _updateLine() {
         if (this.polyline) {
             this.polyline.remove();
             this.polyline = null;
         }
-        const color = this._accent();
         if (this.snappedPath && this.snappedPath.length >= 2) {
             this.polyline = L.polyline(this.snappedPath, {
-                color,
+                colorVar: '--amber',
                 weight: 3,
                 opacity: 0.8,
             }).addTo(this.map);
@@ -189,7 +184,7 @@ export class RouteBuilder {
         } else if (this.waypoints.length >= 2) {
             const coords = this.waypoints.map(w => [w.lat, w.lon]);
             this.polyline = L.polyline(coords, {
-                color,
+                colorVar: '--amber',
                 weight: 3,
                 opacity: 0.8,
             }).addTo(this.map);
