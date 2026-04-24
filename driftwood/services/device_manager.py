@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import logging
 from ..models.device import DeviceInfo
+from .. import config as cfg
 
 log = logging.getLogger(__name__)
 
@@ -10,9 +11,11 @@ class DeviceManager:
     def __init__(self):
         self._devices = {}
         self._active_udid = None
+        self._selected_udid = None
         self._active_conn = None
         self._poll_task = None
         self._listeners = []
+        self._connection_lock = asyncio.Lock()
 
     async def start_polling(self):
         self._poll_task = asyncio.create_task(self._poll_loop())
@@ -69,7 +72,6 @@ class DeviceManager:
             for udid in set(self._devices) - set(current):
                 del self._devices[udid]
                 if self._active_udid == udid:
-                    self._active_udid = None
                     self._active_conn = None
 
             for udid, info in current.items():
@@ -86,18 +88,24 @@ class DeviceManager:
             DeviceInfo(
                 udid=info["udid"],
                 name=info["name"],
-                active=(info["udid"] == self._active_udid),
+                connected=(info["udid"] == self._active_udid and self._active_conn is not None),
+                active=(info["udid"] == self._active_udid or info["udid"] == self._selected_udid),
             )
             for info in self._devices.values()
         ]
 
     async def connect(self, udid):
-        if udid not in self._devices:
-            raise ValueError(f"Device {udid} not found")
+        async with self._connection_lock:
+            if udid not in self._devices:
+                await self._scan()
+            if udid not in self._devices:
+                raise ValueError(f"Device {udid} not found")
 
-        conn = await self._create_connection(udid)
-        self._active_udid = udid
-        self._active_conn = conn
+            await self._close_active_connection(clear_active=True, clear_selected=False)
+            conn = await asyncio.wait_for(self._create_connection(udid), cfg.DEVICE_CONNECT_TIMEOUT_S)
+            self._selected_udid = udid
+            self._active_udid = udid
+            self._active_conn = conn
 
     async def _create_connection(self, udid):
         try:
@@ -197,42 +205,88 @@ class DeviceManager:
         return {"dvt": dvt, "loc": LocationSimulation(dvt)}
 
     async def set_location(self, lat, lon):
-        if not self._active_conn:
-            return
-        try:
-            setter = self._active_conn["loc"].set
-            if inspect.iscoroutinefunction(setter):
-                await setter(lat, lon)
-            else:
-                await asyncio.to_thread(setter, lat, lon)
-        except Exception as e:
-            self._active_conn = None
-            self._active_udid = None
-            raise ConnectionError(f"Device lost: {e}")
+        async with self._connection_lock:
+            try:
+                await self._ensure_connection()
+                await self._set_location(lat, lon)
+            except Exception as first_error:
+                log.warning("Device location push failed; reconnecting: %s", first_error)
+                await self._close_active_connection(clear_active=True, clear_selected=False)
+                try:
+                    await self._ensure_connection()
+                    await self._set_location(lat, lon)
+                except Exception as retry_error:
+                    await self._close_active_connection(clear_active=True, clear_selected=False)
+                    raise ConnectionError(f"Device lost: {retry_error}") from retry_error
 
-    async def clear_location(self):
-        if not self._active_conn:
-            return
-        try:
-            clearer = self._active_conn["loc"].clear
-            if inspect.iscoroutinefunction(clearer):
-                await clearer()
-            else:
-                await asyncio.to_thread(clearer)
-        except Exception:
-            pass
+    async def clear_location(self, reconnect=False):
+        async with self._connection_lock:
+            if not self._active_conn and not reconnect:
+                return
+            if not (self._active_conn or self._active_udid or self._selected_udid):
+                return
+            try:
+                await self._ensure_connection()
+                await self._clear_location()
+            except Exception:
+                await self._close_active_connection(clear_active=True, clear_selected=False)
 
     async def disconnect(self, udid=None):
-        await self.clear_location()
-        if self._active_conn and self._active_conn.get("dvt"):
-            closer = getattr(self._active_conn["dvt"], "close", None)
+        async with self._connection_lock:
+            if udid and udid not in {self._active_udid, self._selected_udid}:
+                return
+            try:
+                if self._active_conn:
+                    await self._clear_location()
+            except Exception:
+                pass
+            await self._close_active_connection(clear_active=True, clear_selected=True)
+
+    async def _ensure_connection(self):
+        if self._active_conn:
+            return
+
+        udid = self._active_udid or self._selected_udid
+        if not udid:
+            raise ConnectionError("No device selected")
+        if udid not in self._devices:
+            await self._scan()
+        if udid not in self._devices:
+            raise ConnectionError(f"Device {udid} not found")
+
+        self._active_conn = await asyncio.wait_for(self._create_connection(udid), cfg.DEVICE_CONNECT_TIMEOUT_S)
+        self._active_udid = udid
+        self._selected_udid = udid
+
+    async def _set_location(self, lat, lon):
+        setter = self._active_conn["loc"].set
+        if inspect.iscoroutinefunction(setter):
+            await asyncio.wait_for(setter(lat, lon), cfg.DEVICE_PUSH_TIMEOUT_S)
+        else:
+            await asyncio.wait_for(asyncio.to_thread(setter, lat, lon), cfg.DEVICE_PUSH_TIMEOUT_S)
+
+    async def _clear_location(self):
+        clearer = self._active_conn["loc"].clear
+        if inspect.iscoroutinefunction(clearer):
+            await asyncio.wait_for(clearer(), cfg.DEVICE_PUSH_TIMEOUT_S)
+        else:
+            await asyncio.wait_for(asyncio.to_thread(clearer), cfg.DEVICE_PUSH_TIMEOUT_S)
+
+    async def _close_active_connection(self, clear_active=False, clear_selected=False):
+        conn = self._active_conn
+        self._active_conn = None
+        if clear_active:
+            self._active_udid = None
+        if clear_selected:
+            self._selected_udid = None
+
+        if conn and conn.get("dvt"):
+            closer = getattr(conn["dvt"], "close", None)
             if closer:
                 try:
                     if inspect.iscoroutinefunction(closer):
-                        await closer()
+                        await asyncio.wait_for(closer(), cfg.DEVICE_PUSH_TIMEOUT_S)
                     else:
-                        await asyncio.to_thread(closer)
+                        await asyncio.wait_for(asyncio.to_thread(closer), cfg.DEVICE_PUSH_TIMEOUT_S)
                 except Exception:
                     pass
-        self._active_conn = None
-        self._active_udid = None
