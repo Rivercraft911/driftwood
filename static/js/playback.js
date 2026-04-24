@@ -15,6 +15,7 @@ export class PlaybackControls {
         this.deviceUpdateInterval = 0.25;
         this._routeUpdateTimer = null;
         this.onSpeedUnitChange = null;
+        this.onRoutingProfileChange = null;
 
         this.btnPlay = document.getElementById('btn-play');
         this.btnPause = document.getElementById('btn-pause');
@@ -48,6 +49,10 @@ export class PlaybackControls {
         return this.speedUnit;
     }
 
+    getRoutingProfile() {
+        return this._activePreset?.dataset.routing === 'driving' ? 'driving' : 'walking';
+    }
+
     _bindEvents() {
         this.btnPlay.onclick = () => this._play();
         this.btnPause.onclick = () => this.ws.send({ type: 'pause' });
@@ -73,9 +78,11 @@ export class PlaybackControls {
 
         this.presets.forEach(btn => {
             btn.onclick = () => {
+                const previousProfile = this.getRoutingProfile();
                 this._activePreset = btn;
                 this.speedMps = this._normalizeSpeed(parseFloat(btn.dataset.speed));
                 this._renderSpeed();
+                this._notifyRoutingProfileChanged(previousProfile);
                 if (this._isConfigLive()) this._sendConfig();
             };
         });
@@ -190,6 +197,12 @@ export class PlaybackControls {
         this.presets.forEach(btn => {
             btn.classList.toggle('active', btn === this._activePreset);
         });
+    }
+
+    _notifyRoutingProfileChanged(previousProfile) {
+        const profile = this.getRoutingProfile();
+        if (profile === previousProfile) return;
+        if (typeof this.onRoutingProfileChange === 'function') this.onRoutingProfileChange(profile);
     }
 
     _buildConfig() {

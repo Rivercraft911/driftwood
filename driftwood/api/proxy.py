@@ -13,6 +13,16 @@ _provider_state = {
     "osrm": {"failure_count": 0, "backoff_until": 0.0},
     "mapbox": {"failure_count": 0, "backoff_until": 0.0},
 }
+_profiles = {
+    "walking": {
+        "osrm": "foot",
+        "mapbox": cfg.MAPBOX_WALKING_PROFILE,
+    },
+    "driving": {
+        "osrm": "driving",
+        "mapbox": cfg.MAPBOX_DRIVING_PROFILE,
+    },
+}
 
 
 def _provider_available(provider: str) -> bool:
@@ -23,10 +33,11 @@ def _provider_label(provider: str) -> str:
     return "Mapbox" if provider == "mapbox" else "OSRM"
 
 
-def _routing_request(provider: str, coords: str):
+def _routing_request(provider: str, coords: str, profile: str):
+    provider_profile = _profiles[profile][provider]
     if provider == "osrm":
         return (
-            f"{cfg.OSRM_BASE}/route/v1/foot/{coords}",
+            f"{cfg.OSRM_BASE}/route/v1/{provider_profile}/{coords}",
             {"overview": "full", "geometries": "geojson", "steps": "false"},
             {
                 "Accept": "application/json",
@@ -36,7 +47,7 @@ def _routing_request(provider: str, coords: str):
         )
 
     return (
-        f"{cfg.MAPBOX_BASE}/directions/v5/{cfg.MAPBOX_PROFILE}/{coords}",
+        f"{cfg.MAPBOX_BASE}/directions/v5/{provider_profile}/{coords}",
         {
             "overview": "full",
             "geometries": "geojson",
@@ -103,14 +114,16 @@ async def routing_providers():
 async def route(
     coords: str,
     provider: str = Query("osrm", pattern="^(osrm|mapbox)$"),
+    profile: str = Query("walking", pattern="^(walking|driving)$"),
 ):
     provider = provider.lower()
+    profile = profile.lower()
     label = _provider_label(provider)
 
     if not _provider_available(provider):
         raise HTTPException(503, f"{label} routing is not configured")
 
-    cache_key = (provider, coords)
+    cache_key = (provider, profile, coords)
     now = time.monotonic()
     async with _cache_lock:
         cached = _cache.get(cache_key)
@@ -123,7 +136,7 @@ async def route(
     if now < state["backoff_until"]:
         raise HTTPException(503, f"{label} temporarily unavailable; using straight segment fallback")
 
-    url, params, headers, timeout_s = _routing_request(provider, coords)
+    url, params, headers, timeout_s = _routing_request(provider, coords, profile)
 
     try:
         async with httpx.AsyncClient(timeout=timeout_s, headers=headers) as client:
@@ -154,4 +167,4 @@ async def route(
 
 @router.get("/osrm/route")
 async def osrm_route(coords: str):
-    return await route(coords=coords, provider="osrm")
+    return await route(coords=coords, provider="osrm", profile="walking")

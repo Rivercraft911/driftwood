@@ -41,6 +41,8 @@ const stats = new StatsDisplay();
 const gpx = new GpxHandler(builder);
 stats.setSpeedUnit(playback.getSpeedUnit());
 playback.onSpeedUnitChange = (unit) => stats.setSpeedUnit(unit);
+playback.onRoutingProfileChange = (profile) => builder.setRoutingProfile(profile);
+builder.setRoutingProfile(playback.getRoutingProfile());
 
 const overlay = document.getElementById('modal-overlay');
 const modalContent = document.getElementById('modal-content');
@@ -102,18 +104,48 @@ btnKawaii.onclick = () => theme.toggle();
 const btnMapLayer = document.getElementById('btn-map-layer');
 theme.setLayerButton(btnMapLayer);
 btnMapLayer.onclick = () => theme.toggleMapLayer();
+const btnCleanLabels = document.getElementById('btn-clean-labels');
+let cleanLabels = localStorage.getItem('driftwood_clean_labels') === 'on';
+function updateCleanLabelsButton() {
+    btnCleanLabels.classList.toggle('active', cleanLabels);
+    btnCleanLabels.title = cleanLabels
+        ? 'Store and restaurant labels hidden'
+        : 'Hide store and restaurant labels';
+}
+function setCleanLabels(enabled) {
+    cleanLabels = enabled;
+    localStorage.setItem('driftwood_clean_labels', enabled ? 'on' : 'off');
+    map.setCleanLabels(enabled);
+    updateCleanLabelsButton();
+}
+btnCleanLabels.onclick = () => setCleanLabels(!cleanLabels);
+setCleanLabels(cleanLabels);
 const btn3D = document.getElementById('btn-3d');
 const pitchControl = document.getElementById('pitch-control');
 const pitchSlider = document.getElementById('pitch-slider');
 let threeDEnabled = localStorage.getItem('driftwood_3d') === 'on';
 let threeDPitch = Number(localStorage.getItem('driftwood_3d_pitch') || pitchSlider.value || 60);
 if (!Number.isFinite(threeDPitch)) threeDPitch = 60;
+let threeDBearing = Number(localStorage.getItem('driftwood_3d_bearing') || -22);
+if (!Number.isFinite(threeDBearing)) threeDBearing = -22;
 function clamp3DPitch(value) {
     return Math.max(0, Math.min(80, value));
+}
+function normalize3DBearing(value) {
+    return ((((value + 180) % 360) + 360) % 360) - 180;
+}
+function wheelDelta(e) {
+    const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    if (!delta) return 0;
+    const modeScale = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 8 : (e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? 24 : 1);
+    return delta * modeScale;
 }
 function persist3DPitch() {
     pitchSlider.value = String(Math.round(threeDPitch));
     localStorage.setItem('driftwood_3d_pitch', String(threeDPitch));
+}
+function persist3DBearing() {
+    localStorage.setItem('driftwood_3d_bearing', String(threeDBearing));
 }
 function set3DEnabled(enabled) {
     threeDEnabled = enabled;
@@ -122,15 +154,22 @@ function set3DEnabled(enabled) {
     update3DControls();
 }
 function updatePitchFromWheel(e) {
-    const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    const delta = wheelDelta(e);
     if (!delta) return;
-    const modeScale = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 8 : (e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? 24 : 1);
-    threeDPitch = clamp3DPitch(threeDPitch - delta * modeScale * 0.08);
+    threeDPitch = clamp3DPitch(threeDPitch - delta * 0.08);
     persist3DPitch();
     map.setPitch(threeDPitch);
 }
+function updateBearingFromWheel(e) {
+    const delta = wheelDelta(e);
+    if (!delta) return;
+    threeDBearing = normalize3DBearing(threeDBearing + delta * 0.18);
+    persist3DBearing();
+    map.setBearing(threeDBearing);
+}
 pitchSlider.value = String(threeDPitch);
 map.setPitch(threeDPitch);
+map.setBearing(threeDBearing);
 map.set3DMode(threeDEnabled, threeDPitch);
 function update3DControls() {
     btn3D.classList.toggle('active', threeDEnabled);
@@ -147,18 +186,24 @@ pitchSlider.oninput = () => {
     map.setPitch(threeDPitch);
 };
 let shiftHeld = false;
+let metaHeld = false;
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Shift') shiftHeld = true;
+    if (e.key === 'Meta') metaHeld = true;
 });
 document.addEventListener('keyup', (e) => {
     if (e.key === 'Shift') shiftHeld = false;
+    if (e.key === 'Meta') metaHeld = false;
 });
 document.getElementById('map').addEventListener('wheel', (e) => {
-    if ((!e.shiftKey && !shiftHeld) || e.target.closest('.mapboxgl-ctrl')) return;
+    const wantsPitch = e.shiftKey || shiftHeld;
+    const wantsOrbit = e.metaKey || metaHeld;
+    if ((!wantsPitch && !wantsOrbit) || e.target.closest('.mapboxgl-ctrl')) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     if (!threeDEnabled) set3DEnabled(true);
-    updatePitchFromWheel(e);
+    if (wantsOrbit) updateBearingFromWheel(e);
+    else updatePitchFromWheel(e);
 }, { capture: true, passive: false });
 update3DControls();
 const btnRouteProvider = document.getElementById('btn-route-provider');

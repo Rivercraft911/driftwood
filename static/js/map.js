@@ -35,6 +35,12 @@ function clampPitch(value) {
     return Math.max(0, Math.min(80, n));
 }
 
+function normalizeBearing(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return DEFAULT_3D_BEARING;
+    return ((((n + 180) % 360) + 360) % 360) - 180;
+}
+
 class LatLngBounds {
     constructor(coords = []) {
         this._coords = [];
@@ -175,11 +181,14 @@ class MapboxMapAdapter {
         this._element = document.getElementById(elementId);
         this._listeners = new Map();
         this._lineOverlays = new Set();
+        this._pendingLayerRemovals = new Set();
+        this._pendingSourceRemovals = new Set();
         this._styles = clientConfig.mapbox?.styles || DEFAULT_STYLES;
         this._layer = 'streets';
         this._activeLayer = 'streets';
         this._theme = 'default';
         this._is3D = false;
+        this._cleanLabels = false;
         this._pitch = DEFAULT_3D_PITCH;
         this._bearing = DEFAULT_3D_BEARING;
         this._center = [37.7749, -122.4194];
@@ -216,6 +225,7 @@ class MapboxMapAdapter {
             this._applyStandardConfig();
             this._applyTerrain();
             this._apply3DCamera(false);
+            this._removePendingLineArtifacts();
             for (const line of this._lineOverlays) this._renderLine(line);
         });
         this._map.on('click', (event) => {
@@ -286,10 +296,26 @@ class MapboxMapAdapter {
         return this;
     }
 
+    setCleanLabels(enabled) {
+        this._cleanLabels = Boolean(enabled);
+        this._applyStandardConfig();
+        return this;
+    }
+
     setPitch(pitch) {
         this._pitch = clampPitch(pitch);
         if (this._is3D) this._apply3DCamera(false);
         return this;
+    }
+
+    setBearing(bearing) {
+        this._bearing = normalizeBearing(bearing);
+        if (this._is3D) this._apply3DCamera(false);
+        return this;
+    }
+
+    orbitBearing(delta) {
+        return this.setBearing(this._bearing + delta);
     }
 
     getPitch() {
@@ -311,13 +337,14 @@ class MapboxMapAdapter {
 
     _unregisterLine(line) {
         this._lineOverlays.delete(line);
-        if (!this._map || !this._map.isStyleLoaded()) return;
-        if (this._map.getLayer(line._layerId)) this._map.removeLayer(line._layerId);
-        if (this._map.getSource(line._sourceId)) this._map.removeSource(line._sourceId);
+        this._pendingLayerRemovals.add(line._layerId);
+        this._pendingSourceRemovals.add(line._sourceId);
+        this._removePendingLineArtifacts();
     }
 
     _renderLine(line) {
         if (!this._map || !this._map.isStyleLoaded()) return;
+        this._removePendingLineArtifacts();
         if (this._map.getSource(line._sourceId)) {
             this._map.getSource(line._sourceId).setData(line.geojson());
             if (this._map.getLayer(line._layerId)) {
@@ -343,6 +370,26 @@ class MapboxMapAdapter {
             },
             paint: line.paint(),
         });
+    }
+
+    _removePendingLineArtifacts() {
+        if (!this._map || !this._map.isStyleLoaded()) return;
+        for (const layerId of Array.from(this._pendingLayerRemovals)) {
+            try {
+                if (this._map.getLayer(layerId)) this._map.removeLayer(layerId);
+                this._pendingLayerRemovals.delete(layerId);
+            } catch {
+                // Style swaps can reject layer changes for a beat; retry on the next render/load.
+            }
+        }
+        for (const sourceId of Array.from(this._pendingSourceRemovals)) {
+            try {
+                if (this._map.getSource(sourceId)) this._map.removeSource(sourceId);
+                this._pendingSourceRemovals.delete(sourceId);
+            } catch {
+                // Sources are removed after dependent layers; retry if Mapbox still sees one.
+            }
+        }
     }
 
     _applyGlobe() {
@@ -373,6 +420,10 @@ class MapboxMapAdapter {
         const config = [
             ['lightPreset', lightPresetForTheme(this._theme)],
             ['show3dObjects', true],
+            ['showPlaceLabels', true],
+            ['showRoadLabels', true],
+            ['showPointOfInterestLabels', !this._cleanLabels],
+            ['showTransitLabels', !this._cleanLabels],
         ];
         if (this._layer === 'streets') {
             config.push(['theme', standardThemeForTheme(this._theme)]);

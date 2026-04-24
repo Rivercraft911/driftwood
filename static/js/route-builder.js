@@ -10,6 +10,8 @@ export class RouteBuilder {
         this._routingListeners = [];
         this._snapRequestId = 0;
         this._snapBackoffUntil = { osrm: 0, mapbox: 0 };
+        this._isSnapping = false;
+        this.routingProfile = 'walking';
         this._routingProviders = this._buildRoutingProviders(routingConfig);
         this.routerProvider = this._initialRouterProvider(routingConfig.defaultProvider);
         this._markerIcon = L.divIcon({
@@ -67,14 +69,30 @@ export class RouteBuilder {
 
     setRouterProvider(provider) {
         if (!this.isRoutingProviderAvailable(provider) || provider === this.routerProvider) return false;
+        const shouldResnap = this.snapEnabled && this.waypoints.length >= 2;
         this.routerProvider = provider;
         localStorage.setItem('driftwood_router_provider', provider);
         this.cancelSnap();
         this.snappedPath = null;
+        this._isSnapping = shouldResnap;
         this._updateLine();
         this._emit();
         for (const fn of this._routingListeners) fn(provider);
-        if (this.snapEnabled && this.waypoints.length >= 2) void this.snapToRoads();
+        if (shouldResnap) void this.snapToRoads();
+        return true;
+    }
+
+    setRoutingProfile(profile) {
+        const next = profile === 'driving' ? 'driving' : 'walking';
+        if (next === this.routingProfile) return false;
+        const shouldResnap = this.snapEnabled && this.waypoints.length >= 2;
+        this.routingProfile = next;
+        this.cancelSnap();
+        this.snappedPath = null;
+        this._isSnapping = shouldResnap;
+        this._updateLine();
+        this._emit();
+        if (shouldResnap) void this.snapToRoads();
         return true;
     }
 
@@ -88,8 +106,14 @@ export class RouteBuilder {
 
     _onGeometryChanged() {
         this.snappedPath = null;
-        this._updateLine();
-        if (this.snapEnabled && this.waypoints.length >= 2) void this.snapToRoads();
+        if (this.snapEnabled && this.waypoints.length >= 2) {
+            this._isSnapping = true;
+            this._updateLine();
+            void this.snapToRoads();
+        } else {
+            this._isSnapping = false;
+            this._updateLine();
+        }
         this._emit();
     }
 
@@ -160,6 +184,8 @@ export class RouteBuilder {
                 weight: 3,
                 opacity: 0.8,
             }).addTo(this.map);
+        } else if (this.snapEnabled && this._isSnapping) {
+            return;
         } else if (this.waypoints.length >= 2) {
             const coords = this.waypoints.map(w => [w.lat, w.lon]);
             this.polyline = L.polyline(coords, {
@@ -176,12 +202,15 @@ export class RouteBuilder {
 
     cancelSnap() {
         this._snapRequestId++;
+        this._isSnapping = false;
     }
 
     async snapToRoads() {
         if (!this.snapEnabled || this.waypoints.length < 2) return;
         const reqId = ++this._snapRequestId;
         const snapped = [];
+        this._isSnapping = true;
+        this._updateLine();
 
         for (let i = 0; i < this.waypoints.length - 1; i++) {
             const a = this.waypoints[i];
@@ -194,6 +223,7 @@ export class RouteBuilder {
         }
 
         if (!this.snapEnabled || reqId !== this._snapRequestId) return;
+        this._isSnapping = false;
         this.snappedPath = snapped.length >= 2 ? snapped : null;
         this._updateLine();
         this._emit();
@@ -204,7 +234,12 @@ export class RouteBuilder {
         if (Date.now() < (this._snapBackoffUntil[provider] || 0)) return null;
         const coords = `${a.lon},${a.lat};${b.lon},${b.lat}`;
         try {
-            const resp = await fetch(`/api/proxy/route?provider=${encodeURIComponent(provider)}&coords=${encodeURIComponent(coords)}`);
+            const params = new URLSearchParams({
+                provider,
+                profile: this.routingProfile,
+                coords,
+            });
+            const resp = await fetch(`/api/proxy/route?${params}`);
             if (!resp.ok) {
                 if (resp.status >= 500) this._snapBackoffUntil[provider] = Date.now() + 60_000;
                 return null;
@@ -245,6 +280,7 @@ export class RouteBuilder {
 
     clearRoute() {
         this._snapRequestId++;
+        this._isSnapping = false;
         for (const wp of this.waypoints) wp.marker.remove();
         this.waypoints = [];
         this.snappedPath = null;
