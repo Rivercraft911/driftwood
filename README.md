@@ -29,7 +29,10 @@ Enable Developer Mode on your iPhone
 
 ```bash
 pip install -e .
+cp .env.example .env
 ```
+
+Driftwood now reads local settings from `.env`. Add your Mapbox public token there for Mapbox maps and routing, and keep the real `.env` out of git.
 
 ## Run (One Terminal)
 
@@ -53,7 +56,7 @@ driftwood stop                             # stop playback
 
 ## Stack
 
-Python (FastAPI, pymobiledevice3) · Vanilla JS · Leaflet · No build step
+Python (FastAPI, pymobiledevice3) · Vanilla JS · Mapbox GL JS · No build step
 
 ## For Those Pesky Windows Users
 
