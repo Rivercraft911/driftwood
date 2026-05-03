@@ -57,15 +57,23 @@ Python (FastAPI, pymobiledevice3) · Vanilla JS · Leaflet · No build step
 
 ## For Those Pesky Windows Users
 
-Here is a setup that should work.
+This should work.
 
 ```powershell
 py -m pip install -e .
-Start-Process powershell -Verb RunAs -ArgumentList '-NoExit','-Command','py -m pymobiledevice3 remote tunneld'
-py -m driftwood.cli serve
 ```
 
 Install iTunes from the Microsoft Store first:
 <https://apps.microsoft.com/detail/9pb2mz1zmb1s?hl=en-US&gl=US>
 
-Then open <http://127.0.0.1:7777>. On iOS 17.0-17.3.1, `pymobiledevice3` notes that Windows may also need additional drivers.
+Then run these in two separate PowerShell windows:
+
+```powershell
+py -m pymobiledevice3 remote tunneld
+```
+
+```powershell
+py -m driftwood.cli serve
+```
+
+Then open <http://127.0.0.1:7777>. If needed, enable Developer Mode on the phone first. On iOS 17.0-17.3.1, `pymobiledevice3` notes that Windows may also need additional drivers.

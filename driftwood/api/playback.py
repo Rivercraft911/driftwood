@@ -1,7 +1,7 @@
 import json
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
-from typing import Optional
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
+from typing import Literal, Optional
 from ..models.playback import PlaybackConfig, RealismConfig
 from ..models.route import Route
 
@@ -10,15 +10,15 @@ router = APIRouter()
 
 class PlayRequest(BaseModel):
     route_name: str
-    speed_mps: float = 1.4
+    speed_mps: float = Field(default=1.4, ge=0.1, le=71.53)
     use_arrival_times: bool = False
-    loop_mode: str = "none"
-    device_update_interval_s: float = 0.25
+    loop_mode: Literal["none", "loop", "bounce"] = "none"
+    device_update_interval_s: float = Field(default=0.25, ge=0.25, le=50.0)
     realism: Optional[RealismConfig] = None
 
 
 class ScrubRequest(BaseModel):
-    progress: float
+    progress: float = Field(ge=0.0, le=1.0)
 
 
 @router.get("/state")
@@ -31,7 +31,6 @@ async def play(req: PlayRequest, request: Request):
     store = request.app.state.route_store
     route = store.get_route(req.route_name)
     if not route:
-        from fastapi import HTTPException
         raise HTTPException(404, "Route not found")
 
     config = PlaybackConfig(

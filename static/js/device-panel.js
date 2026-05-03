@@ -19,8 +19,8 @@ export class DevicePanel {
             }
             const active = devices.find(d => d.active);
             if (active) {
-                this.dot.className = 'device-dot connected';
-                this.label.textContent = active.name;
+                this.dot.className = active.connected ? 'device-dot connected' : 'device-dot error';
+                this.label.textContent = active.connected ? active.name : `${active.name} reconnecting...`;
                 this._setClickable(null);
             } else {
                 this.dot.className = 'device-dot';

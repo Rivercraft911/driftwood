@@ -22,6 +22,8 @@ class PlaybackController:
         self._config = PlaybackConfig()
         self._speed_ema = None
         self._last_device_push_at = None
+        self._device_push_task = None
+        self._device_error_active = False
 
     @property
     def status(self):
@@ -54,6 +56,8 @@ class PlaybackController:
         self.state = PlaybackState.PLAYING
         self._speed_ema = None
         self._last_device_push_at = None
+        self._device_error_active = False
+        self._cancel_device_push()
         self._task = asyncio.create_task(self._tick_loop())
         await self._broadcast_state("user")
 
@@ -78,6 +82,7 @@ class PlaybackController:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        self._cancel_device_push()
         if self.device_manager:
             try:
                 await self.device_manager.clear_location()
@@ -87,6 +92,7 @@ class PlaybackController:
         self.route_name = None
         self._speed_ema = None
         self._last_device_push_at = None
+        self._device_error_active = False
         await self._broadcast_state("user")
 
     async def scrub(self, progress):
@@ -135,22 +141,22 @@ class PlaybackController:
 
                 if point is None:
                     end_point = self.simulation.current_point(speed=0.0, apply_jitter=False)
-                    if self.device_manager:
-                        try:
-                            await self.device_manager.set_location(end_point.lat, end_point.lon)
-                        except Exception:
-                            self.state = PlaybackState.PAUSED
-                            await self._broadcast({"type": "error", "message": "Device disconnected", "code": "DEVICE_LOST"})
-                            await self._broadcast_state("device_lost")
-                            break
+                    self._schedule_device_push(end_point.lat, end_point.lon)
+
+                    if self.simulation.total_distance <= 0:
+                        self.state = PlaybackState.IDLE
+                        await self._broadcast_state("route_complete")
+                        break
 
                     if self._config.loop_mode == "loop":
                         self.simulation.reset()
                         self._last_device_push_at = None
+                        await asyncio.sleep(cfg.TICK_INTERVAL)
                         continue
                     elif self._config.loop_mode == "bounce":
                         self.simulation.reverse()
                         self._last_device_push_at = None
+                        await asyncio.sleep(cfg.TICK_INTERVAL)
                         continue
                     else:
                         self.state = PlaybackState.IDLE
@@ -164,19 +170,13 @@ class PlaybackController:
                         self._speed_ema = self._speed_ema * 0.8 + point.speed * 0.2
 
                 if self.device_manager:
-                    try:
-                        should_push = (
-                            self._last_device_push_at is None
-                            or self.simulation.elapsed - self._last_device_push_at >= self._config.device_update_interval_s
-                        )
-                        if should_push:
-                            await self.device_manager.set_location(point.lat, point.lon)
-                            self._last_device_push_at = self.simulation.elapsed
-                    except Exception:
-                        self.state = PlaybackState.PAUSED
-                        await self._broadcast({"type": "error", "message": "Device disconnected", "code": "DEVICE_LOST"})
-                        await self._broadcast_state("device_lost")
-                        break
+                    should_push = (
+                        self._last_device_push_at is None
+                        or self.simulation.elapsed - self._last_device_push_at >= self._config.device_update_interval_s
+                    )
+                    if should_push:
+                        self._schedule_device_push(point.lat, point.lon)
+                        self._last_device_push_at = self.simulation.elapsed
 
                 speed_for_eta = self._speed_ema if self._speed_ema and self._speed_ema > 0 else self._config.speed_mps
                 remaining_s = self.simulation.estimate_remaining_seconds(speed_for_eta)
@@ -200,6 +200,34 @@ class PlaybackController:
                 await asyncio.sleep(cfg.TICK_INTERVAL)
         except asyncio.CancelledError:
             pass
+
+    def _schedule_device_push(self, lat, lon):
+        if not self.device_manager:
+            return
+        if self._device_push_task and not self._device_push_task.done():
+            return
+        self._device_push_task = asyncio.create_task(self._push_device_location(lat, lon))
+
+    async def _push_device_location(self, lat, lon):
+        try:
+            await self.device_manager.set_location(lat, lon)
+            if self._device_error_active:
+                self._device_error_active = False
+                await self._broadcast({"type": "device", "status": "reconnected"})
+        except Exception as e:
+            if not self._device_error_active:
+                self._device_error_active = True
+                await self._broadcast({
+                    "type": "error",
+                    "message": f"Device disconnected; playback is still running and Driftwood will keep retrying. {e}",
+                    "code": "DEVICE_RETRYING",
+                })
+                await self._broadcast({"type": "device", "status": "reconnecting"})
+
+    def _cancel_device_push(self):
+        if self._device_push_task and not self._device_push_task.done():
+            self._device_push_task.cancel()
+        self._device_push_task = None
 
     async def _broadcast_state(self, reason):
         await self._broadcast({

@@ -1,5 +1,5 @@
 export class RouteBuilder {
-    constructor(map) {
+    constructor(map, routingConfig = {}) {
         this.map = map;
         this.waypoints = [];
         this.polyline = null;
@@ -7,7 +7,13 @@ export class RouteBuilder {
         this.snapEnabled = false;
         this._routeName = 'untitled';
         this._listeners = [];
+        this._routingListeners = [];
         this._snapRequestId = 0;
+        this._snapBackoffUntil = { osrm: 0, mapbox: 0 };
+        this._isSnapping = false;
+        this.routingProfile = 'walking';
+        this._routingProviders = this._buildRoutingProviders(routingConfig);
+        this.routerProvider = this._initialRouterProvider(routingConfig.defaultProvider);
         this._markerIcon = L.divIcon({
             className: 'waypoint-marker',
             html: '',
@@ -53,6 +59,43 @@ export class RouteBuilder {
         this._listeners.push(fn);
     }
 
+    onRoutingProviderChange(fn) {
+        this._routingListeners.push(fn);
+    }
+
+    isRoutingProviderAvailable(provider) {
+        return Boolean(this._routingProviders[provider]?.available);
+    }
+
+    setRouterProvider(provider) {
+        if (!this.isRoutingProviderAvailable(provider) || provider === this.routerProvider) return false;
+        const shouldResnap = this.snapEnabled && this.waypoints.length >= 2;
+        this.routerProvider = provider;
+        localStorage.setItem('driftwood_router_provider', provider);
+        this.cancelSnap();
+        this.snappedPath = null;
+        this._isSnapping = shouldResnap;
+        this._updateLine();
+        this._emit();
+        for (const fn of this._routingListeners) fn(provider);
+        if (shouldResnap) void this.snapToRoads();
+        return true;
+    }
+
+    setRoutingProfile(profile) {
+        const next = profile === 'driving' ? 'driving' : 'walking';
+        if (next === this.routingProfile) return false;
+        const shouldResnap = this.snapEnabled && this.waypoints.length >= 2;
+        this.routingProfile = next;
+        this.cancelSnap();
+        this.snappedPath = null;
+        this._isSnapping = shouldResnap;
+        this._updateLine();
+        this._emit();
+        if (shouldResnap) void this.snapToRoads();
+        return true;
+    }
+
     _emit() {
         for (const fn of this._listeners) fn();
     }
@@ -63,8 +106,14 @@ export class RouteBuilder {
 
     _onGeometryChanged() {
         this.snappedPath = null;
-        this._updateLine();
-        if (this.snapEnabled && this.waypoints.length >= 2) void this.snapToRoads();
+        if (this.snapEnabled && this.waypoints.length >= 2) {
+            this._isSnapping = true;
+            this._updateLine();
+            void this.snapToRoads();
+        } else {
+            this._isSnapping = false;
+            this._updateLine();
+        }
         this._emit();
     }
 
@@ -119,26 +168,23 @@ export class RouteBuilder {
         });
     }
 
-    _accent() {
-        return getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() || '#f59e0b';
-    }
-
     _updateLine() {
         if (this.polyline) {
             this.polyline.remove();
             this.polyline = null;
         }
-        const color = this._accent();
         if (this.snappedPath && this.snappedPath.length >= 2) {
             this.polyline = L.polyline(this.snappedPath, {
-                color,
+                colorVar: '--amber',
                 weight: 3,
                 opacity: 0.8,
             }).addTo(this.map);
+        } else if (this.snapEnabled && this._isSnapping) {
+            return;
         } else if (this.waypoints.length >= 2) {
             const coords = this.waypoints.map(w => [w.lat, w.lon]);
             this.polyline = L.polyline(coords, {
-                color,
+                colorVar: '--amber',
                 weight: 3,
                 opacity: 0.8,
             }).addTo(this.map);
@@ -149,37 +195,56 @@ export class RouteBuilder {
         this._updateLine();
     }
 
+    cancelSnap() {
+        this._snapRequestId++;
+        this._isSnapping = false;
+    }
+
     async snapToRoads() {
-        if (this.waypoints.length < 2) return;
+        if (!this.snapEnabled || this.waypoints.length < 2) return;
         const reqId = ++this._snapRequestId;
         const snapped = [];
+        this._isSnapping = true;
+        this._updateLine();
 
         for (let i = 0; i < this.waypoints.length - 1; i++) {
             const a = this.waypoints[i];
             const b = this.waypoints[i + 1];
             const segment = await this._snapSegment(a, b);
-            if (reqId !== this._snapRequestId) return;
+            if (!this.snapEnabled || reqId !== this._snapRequestId) return;
 
             const fallback = [[a.lat, a.lon], [b.lat, b.lon]];
             this._appendSegment(snapped, segment && segment.length >= 2 ? segment : fallback);
         }
 
-        if (reqId !== this._snapRequestId) return;
+        if (!this.snapEnabled || reqId !== this._snapRequestId) return;
+        this._isSnapping = false;
         this.snappedPath = snapped.length >= 2 ? snapped : null;
         this._updateLine();
         this._emit();
     }
 
     async _snapSegment(a, b) {
+        const provider = this.routerProvider;
+        if (Date.now() < (this._snapBackoffUntil[provider] || 0)) return null;
         const coords = `${a.lon},${a.lat};${b.lon},${b.lat}`;
         try {
-            const resp = await fetch(`/api/proxy/osrm/route?coords=${encodeURIComponent(coords)}`);
-            if (!resp.ok) return null;
+            const params = new URLSearchParams({
+                provider,
+                profile: this.routingProfile,
+                coords,
+            });
+            const resp = await fetch(`/api/proxy/route?${params}`);
+            if (!resp.ok) {
+                if (resp.status >= 500) this._snapBackoffUntil[provider] = Date.now() + 60_000;
+                return null;
+            }
             const data = await resp.json();
             if (!data.routes || !data.routes[0] || !data.routes[0].geometry) return null;
             const geom = data.routes[0].geometry.coordinates;
             return geom.map(c => [c[1], c[0]]);
         } catch {
+            this._snapBackoffUntil[provider] = Date.now() + 60_000;
             return null;
         }
     }
@@ -210,6 +275,7 @@ export class RouteBuilder {
 
     clearRoute() {
         this._snapRequestId++;
+        this._isSnapping = false;
         for (const wp of this.waypoints) wp.marker.remove();
         this.waypoints = [];
         this.snappedPath = null;
@@ -288,5 +354,24 @@ export class RouteBuilder {
             this.map.fitBounds(bounds, { padding: [50, 50] });
         }
         this._emit();
+    }
+
+    _buildRoutingProviders(config) {
+        const providers = {
+            osrm: { id: 'osrm', label: 'OSRM', available: true },
+            mapbox: { id: 'mapbox', label: 'Mapbox', available: false },
+        };
+        for (const provider of config.providers || []) {
+            if (provider?.id) providers[provider.id] = { ...provider };
+        }
+        providers.osrm.available = true;
+        return providers;
+    }
+
+    _initialRouterProvider(defaultProvider = 'osrm') {
+        const saved = localStorage.getItem('driftwood_router_provider');
+        if (saved && this.isRoutingProviderAvailable(saved)) return saved;
+        if (this.isRoutingProviderAvailable(defaultProvider)) return defaultProvider;
+        return 'osrm';
     }
 }

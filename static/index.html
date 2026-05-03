@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MR Driftwood</title>
     <link rel="stylesheet" href="/css/style.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.21.0/mapbox-gl.css">
     <link rel="icon" href="/img/favicon.svg">
 </head>
 <body>
@@ -20,6 +20,17 @@
             </div>
             <button id="btn-kawaii" class="btn-ghost" title="Toggle kawaii mode">✿</button>
         </div>
+    </div>
+
+    <div id="map-layer-control" class="floating-panel layer-control">
+        <button id="btn-map-layer" class="btn-ghost" title="Map layer: streets">Map</button>
+        <button id="btn-clean-labels" class="btn-ghost" title="Hide store and restaurant labels">Clean</button>
+        <button id="btn-3d" class="btn-ghost" title="3D view: off">3D</button>
+        <label id="pitch-control" class="pitch-control" title="3D camera angle">
+            <span>Tilt</span>
+            <input type="range" id="pitch-slider" min="0" max="80" step="1" value="60" disabled>
+        </label>
+        <button id="btn-route-provider" class="btn-ghost" title="Routing provider: OSRM">OSRM</button>
     </div>
 
     <div id="waypoint-panel" class="floating-panel right">
@@ -68,10 +79,10 @@
                 <span id="speed-label">3.1 mph</span>
             </div>
             <div class="speed-presets">
-                <button data-speed="1.4" data-min="0.2" data-max="2.7"   class="preset active" data-kawaii="✿">Walk</button>
-                <button data-speed="2.8" data-min="1.5" data-max="6.0"   class="preset"        data-kawaii="❀">Jog</button>
-                <button data-speed="5.5" data-min="3.0" data-max="14.0"  class="preset"        data-kawaii="♡">Bike</button>
-                <button data-speed="13.4" data-min="4.0" data-max="71.53" class="preset"       data-kawaii="✦">Drive</button>
+                <button data-speed="1.4" data-min="0.2" data-max="2.7"    data-routing="walking" class="preset active" data-kawaii="✿">Walk</button>
+                <button data-speed="2.8" data-min="1.5" data-max="6.0"    data-routing="walking" class="preset"        data-kawaii="❀">Jog</button>
+                <button data-speed="5.5" data-min="3.0" data-max="14.0"   data-routing="walking" class="preset"        data-kawaii="♡">Bike</button>
+                <button data-speed="13.4" data-min="4.0" data-max="71.53" data-routing="driving" class="preset"        data-kawaii="✦">Drive</button>
             </div>
             <div class="update-rate-control">
                 <button id="btn-update-rate" class="btn-ghost" title="Location push rate">Rate</button>
@@ -105,7 +116,7 @@
         <div id="modal-content" class="modal"></div>
     </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.21.0/mapbox-gl.js"></script>
     <script type="module" src="/js/app.js"></script>
 </body>
 </html>

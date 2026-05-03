@@ -30,10 +30,6 @@ export class TrailRenderer {
         }
     }
 
-    _accent() {
-        return getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() || '#f59e0b';
-    }
-
     refresh() {
         this._render();
     }
@@ -42,14 +38,13 @@ export class TrailRenderer {
         for (const s of this.segments) s.remove();
         this.segments = [];
         const now = Date.now();
-        const color = this._accent();
         for (let i = 1; i < this.points.length; i++) {
             const age = (now - this.points[i].ts) / 1000;
             const opacity = Math.max(0.05, 1 - age / this.FADE_DURATION);
             const seg = L.polyline(
                 [[this.points[i - 1].lat, this.points[i - 1].lon],
                  [this.points[i].lat, this.points[i].lon]],
-                { color, weight: 3, opacity }
+                { colorVar: '--amber', weight: 3, opacity }
             ).addTo(this.map);
             this.segments.push(seg);
         }
