@@ -43,6 +43,26 @@ stats.setSpeedUnit(playback.getSpeedUnit());
 playback.onSpeedUnitChange = (unit) => stats.setSpeedUnit(unit);
 playback.onRoutingProfileChange = (profile) => builder.setRoutingProfile(profile);
 builder.setRoutingProfile(playback.getRoutingProfile());
+builder.onLoad(() => {
+    if (playback.state === 'playing' || playback.state === 'paused') ws.send({ type: 'stop' });
+});
+
+// Unsaved work survives a refresh.
+const DRAFT_KEY = 'driftwood_draft';
+let savedRouteName = null;
+let draftTimer = null;
+builder.onChange(() => {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => {
+        try {
+            localStorage.setItem(DRAFT_KEY, JSON.stringify(builder.toRoute()));
+        } catch {}
+    }, 300);
+});
+try {
+    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    if (draft?.waypoints?.length) builder.loadRoute(draft);
+} catch {}
 
 const overlay = document.getElementById('modal-overlay');
 const modalContent = document.getElementById('modal-content');
@@ -326,12 +346,26 @@ document.getElementById('btn-save').onclick = () => {
         </div>
     `);
     document.getElementById('save-cancel').onclick = hideModal;
-    document.getElementById('save-confirm').onclick = async () => {
+    const confirmBtn = document.getElementById('save-confirm');
+    let overwriteName = null;
+    document.getElementById('save-name').oninput = () => {
+        overwriteName = null;
+        confirmBtn.textContent = 'Save';
+    };
+    confirmBtn.onclick = async () => {
         const name = document.getElementById('save-name').value.trim();
         if (!name) return;
         if (builder.waypoints.length === 0) {
             showToast('Add at least one waypoint before saving.');
             return;
+        }
+        if (name !== savedRouteName && overwriteName !== name) {
+            const existing = await fetch(`/api/routes/${encodeURIComponent(name)}`).catch(() => null);
+            if (existing && existing.status !== 404) {
+                overwriteName = name;
+                confirmBtn.textContent = `Overwrite "${name}"?`;
+                return;
+            }
         }
         builder._routeName = name;
         const r = builder.toRoute();
@@ -344,6 +378,7 @@ document.getElementById('btn-save').onclick = () => {
             showToast('Save failed.');
             return;
         }
+        savedRouteName = name;
         hideModal();
         showToast(`Saved "${name}".`, 2000);
     };
@@ -369,12 +404,14 @@ document.getElementById('btn-load').onclick = async () => {
     }
 
     const items = routes.map(r => `
-        <div class="route-list-item" data-name="${escapeHtml(r.name)}">
+        <div class="route-list-item${r.error ? ' unreadable' : ''}" data-id="${escapeHtml(r.id)}">
             <div>
                 <div class="route-list-name">${escapeHtml(r.name)}</div>
-                <div class="route-list-meta">${r.waypoint_count} pts &middot; ${(r.total_distance_m / 1000).toFixed(1)} km</div>
+                <div class="route-list-meta">${r.error
+                    ? `Can't read this file: ${escapeHtml(r.error)}`
+                    : `${r.waypoint_count} pts &middot; ${(r.total_distance_m / 1000).toFixed(1)} km`}</div>
             </div>
-            <button class="delete-btn" data-delete="${escapeHtml(r.name)}" title="Delete">&times;</button>
+            <button class="delete-btn" data-delete="${escapeHtml(r.id)}" title="Delete">&times;</button>
         </div>
     `).join('');
 
@@ -388,13 +425,17 @@ document.getElementById('btn-load').onclick = async () => {
 
     document.getElementById('load-cancel').onclick = hideModal;
 
-    modalContent.querySelectorAll('[data-name]').forEach(el => {
+    modalContent.querySelectorAll('[data-id]').forEach(el => {
         el.onclick = async (e) => {
             if (e.target.closest('[data-delete]')) return;
-            const name = el.dataset.name;
-            const resp = await fetch(`/api/routes/${encodeURIComponent(name)}`);
-            const route = await resp.json();
-            builder.loadRoute(route);
+            const resp = await fetch(`/api/routes/${encodeURIComponent(el.dataset.id)}`).catch(() => null);
+            const data = await resp?.json().catch(() => null);
+            if (!resp?.ok || !data?.waypoints?.length) {
+                showToast(data?.detail || 'Could not load that route. Your current route is unchanged.', 6000);
+                return;
+            }
+            builder.loadRoute(data);
+            savedRouteName = data.name;
             hideModal();
         };
     });
@@ -402,8 +443,12 @@ document.getElementById('btn-load').onclick = async () => {
     modalContent.querySelectorAll('[data-delete]').forEach(btn => {
         btn.onclick = async (e) => {
             e.stopPropagation();
-            const name = btn.dataset.delete;
-            await fetch(`/api/routes/${encodeURIComponent(name)}`, { method: 'DELETE' });
+            if (!btn.classList.contains('confirm')) {
+                btn.classList.add('confirm');
+                btn.textContent = 'Delete?';
+                return;
+            }
+            await fetch(`/api/routes/${encodeURIComponent(btn.dataset.delete)}`, { method: 'DELETE' });
             document.getElementById('btn-load').click();
         };
     });
@@ -459,6 +504,21 @@ document.getElementById('btn-hold').onclick = () => {
     };
 };
 
-document.getElementById('btn-clear').onclick = () => {
+const btnClear = document.getElementById('btn-clear');
+let clearArmTimer = null;
+btnClear.onclick = () => {
+    if (builder.waypoints.length > 1 && !btnClear.classList.contains('confirm')) {
+        btnClear.classList.add('confirm');
+        btnClear.textContent = 'Sure?';
+        clearArmTimer = setTimeout(() => {
+            btnClear.classList.remove('confirm');
+            btnClear.textContent = 'Clear';
+        }, 3000);
+        return;
+    }
+    clearTimeout(clearArmTimer);
+    btnClear.classList.remove('confirm');
+    btnClear.textContent = 'Clear';
     builder.clearRoute();
+    savedRouteName = null;
 };

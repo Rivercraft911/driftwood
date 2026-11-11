@@ -338,6 +338,7 @@ export class PlaybackControls {
 
     onStateChange(msg) {
         this.state = msg.state;
+        if (this.state !== 'playing' && this.state !== 'paused') clearTimeout(this._routeUpdateTimer);
         this.btnPlay.hidden = this.state === 'playing';
         this.btnPause.hidden = this.state !== 'playing';
         this.btnHold.classList.toggle('active', this.state === 'holding');

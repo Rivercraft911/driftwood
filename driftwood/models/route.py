@@ -20,8 +20,10 @@ class Route(BaseModel):
 
 
 class RouteMetadata(BaseModel):
+    id: str
     name: str
-    waypoint_count: int
-    total_distance_m: float
-    created: datetime
-    modified: datetime
+    waypoint_count: int = 0
+    total_distance_m: float = 0.0
+    created: Optional[datetime] = None
+    modified: Optional[datetime] = None
+    error: Optional[str] = None

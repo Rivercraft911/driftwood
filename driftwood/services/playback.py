@@ -127,7 +127,7 @@ class PlaybackController:
             self.simulation.update_config(config)
 
     async def update_route(self, route):
-        if self.state == PlaybackState.HOLDING:
+        if self.state not in (PlaybackState.PLAYING, PlaybackState.PAUSED):
             return
         if not self.simulation:
             self.route_name = route.name

@@ -16,6 +16,10 @@ class RouteStore:
         self.directory.mkdir(parents=True, exist_ok=True)
 
     def _path_for(self, name):
+        # Prefer the exact file stem so renamed files still resolve.
+        exact = self.directory / f"{name}.json"
+        if Path(name).name == name and exact.is_file():
+            return exact
         return self.directory / f"{sanitize_name(name)}.json"
 
     def list_routes(self):
@@ -23,17 +27,18 @@ class RouteStore:
         for f in sorted(self.directory.glob("*.json")):
             try:
                 route = Route.model_validate_json(f.read_text())
-                path = [[w.lat, w.lon] for w in route.waypoints]
+                path = route.snapped_path or [[w.lat, w.lon] for w in route.waypoints]
                 cum = build_cumulative_distances(path)
                 results.append(RouteMetadata(
+                    id=f.stem,
                     name=route.name,
                     waypoint_count=len(route.waypoints),
                     total_distance_m=cum[-1] if cum else 0,
                     created=route.created,
                     modified=route.modified,
                 ))
-            except Exception:
-                continue
+            except Exception as e:
+                results.append(RouteMetadata(id=f.stem, name=f.stem, error=str(e).splitlines()[0]))
         return results
 
     def get_route(self, name):

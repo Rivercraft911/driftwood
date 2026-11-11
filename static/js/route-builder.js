@@ -7,6 +7,7 @@ export class RouteBuilder {
         this.snapEnabled = false;
         this._routeName = 'untitled';
         this._listeners = [];
+        this._loadListeners = [];
         this._routingListeners = [];
         this._snapRequestId = 0;
         this._snapBackoffUntil = { osrm: 0, mapbox: 0 };
@@ -73,6 +74,10 @@ export class RouteBuilder {
 
     onChange(fn) {
         this._listeners.push(fn);
+    }
+
+    onLoad(fn) {
+        this._loadListeners.push(fn);
     }
 
     onRoutingProviderChange(fn) {
@@ -331,7 +336,8 @@ export class RouteBuilder {
         };
     }
 
-    loadRoute(route) {
+    loadRoute(route, { fit = true } = {}) {
+        for (const fn of this._loadListeners) fn(route);
         this.clearRoute();
         this._routeName = route.name || 'untitled';
         if (route.snapped_path) this.snappedPath = route.snapped_path;
@@ -349,7 +355,7 @@ export class RouteBuilder {
 
         if (this.snapEnabled && !this.snappedPath && this.waypoints.length >= 2) void this.snapToRoads();
         else this._updateLine();
-        if (this.waypoints.length > 0) {
+        if (fit && this.waypoints.length > 0) {
             const bounds = L.latLngBounds(this.waypoints.map(w => [w.lat, w.lon]));
             this.map.fitBounds(bounds);
         }

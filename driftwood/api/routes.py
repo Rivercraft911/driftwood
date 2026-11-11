@@ -12,7 +12,10 @@ async def list_routes(request: Request):
 
 @router.get("/{name}")
 async def get_route(name: str, request: Request):
-    route = request.app.state.route_store.get_route(name)
+    try:
+        route = request.app.state.route_store.get_route(name)
+    except ValueError as e:
+        raise HTTPException(422, f"Route file is unreadable: {str(e).splitlines()[0]}")
     if not route:
         raise HTTPException(404, "Route not found")
     return route

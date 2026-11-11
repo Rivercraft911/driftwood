@@ -813,6 +813,22 @@ button:disabled { opacity: 0.3; cursor: default; }
     color: var(--text-dim);
 }
 
+#btn-clear.confirm {
+    background: var(--danger);
+}
+
+.route-list-item .delete-btn.confirm {
+    width: auto;
+    padding: 0 6px;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+}
+
+.route-list-item.unreadable .route-list-name,
+.route-list-item.unreadable .route-list-meta {
+    color: var(--danger);
+}
+
 .route-list-item .delete-btn:hover {
     color: var(--danger);
     background: transparent;
