@@ -6,7 +6,20 @@ Need to convince your friends that you do cool things on the weekends? Want your
 Have you considered lying with infrastructure?
 
 Well... look no further
-MR Driftwood is a local GPS route simulator for iOS. Draw a route on a map, plug in your iPhone, press play, and watch yourdevice confidently wander the earth without you.
+MR Driftwood is a local GPS route simulator for iOS. Draw a route on a map, plug in your iPhone, press play, and watch your device confidently wander the earth without you.
+
+<table>
+  <tr>
+    <td width="72%"><img src="docs/screenshot-web.jpg" alt="Driftwood driving a loop around Apple Park — blue is the trail so far"></td>
+    <!-- add docs/screenshot-phone.png (pymobiledevice3 developer dvt screenshot docs/screenshot-phone.png) and uncomment:
+    <td width="28%"><img src="docs/screenshot-phone.png" alt="iPhone Find My showing the simulated location"></td>
+    -->
+  </tr>
+  <tr>
+    <td align="center"><sub>Driving a lap of Apple Park. Blue is where the phone has been.</sub></td>
+    <!-- <td align="center"><sub>Meanwhile, on the phone.</sub></td> -->
+  </tr>
+</table>
 
 
 ## What It Does
@@ -17,8 +30,28 @@ Draw GPS routes on a map. Walk your iPhone along them in real time over USB. No 
 - Snap paths to roads
 - Simulate walking, jogging, biking, or driving
 - Add pauses at waypoints
+- Standstill mode: pin the phone to one spot (paste coords or pick on the map)
 - Stream location updates to an iPhone over USB
 - Save and replay routes
+
+### Drive a city like you mean it
+
+![A snapped drive across San Francisco at 35 mph, sped up](docs/drive-city.gif)
+
+Turn on **Snap to roads** with the **Drive** preset and the route sticks to drivable streets, following one-ways and turn restrictions instead of cutting through buildings. Blue is the path the phone has driven so far, at a steady 35 mph (GIF is sped up ~60×).
+
+## Controls
+
+| Action | How |
+| --- | --- |
+| Add waypoint | Click the map |
+| Move waypoint | Drag the dot |
+| Delete waypoint | Right-click the dot, or `×` in the route panel |
+| Undo last waypoint | `Cmd/Ctrl + Z` |
+| Play / pause | `Space` |
+| Stop (releases the phone) | `Esc` |
+| Standstill | `⌖` button → paste `lat, lon` or **Pick on map** |
+| Tilt / orbit 3D | `Shift` + scroll / `Cmd` + scroll |
 
 
 
@@ -51,7 +84,15 @@ Open [http://127.0.0.1:7777](http://127.0.0.1:7777)
 ```bash
 driftwood devices                          # list connected iPhones
 driftwood run --route myroute --speed 1.4  # headless playback
-driftwood stop                             # stop playback
+driftwood hold 37.7749, -122.4194          # pin the phone to one spot (server must be running)
+driftwood stop                             # stop playback / release the phone
+```
+
+## Tests
+
+```bash
+pip install pytest
+pytest
 ```
 
 ## Stack

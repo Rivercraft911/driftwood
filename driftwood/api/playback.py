@@ -17,6 +17,11 @@ class PlayRequest(BaseModel):
     realism: Optional[RealismConfig] = None
 
 
+class HoldRequest(BaseModel):
+    lat: float = Field(ge=-90.0, le=90.0)
+    lon: float = Field(ge=-180.0, le=180.0)
+
+
 class ScrubRequest(BaseModel):
     progress: float = Field(ge=0.0, le=1.0)
 
@@ -42,6 +47,12 @@ async def play(req: PlayRequest, request: Request):
     )
     await request.app.state.playback.play(route, config)
     return {"status": "playing"}
+
+
+@router.post("/hold")
+async def hold(req: HoldRequest, request: Request):
+    await request.app.state.playback.hold(req.lat, req.lon)
+    return {"status": "holding"}
 
 
 @router.post("/pause")
@@ -85,6 +96,8 @@ async def ws_endpoint(websocket: WebSocket):
         "state": status.state,
         "reason": "snapshot",
         "route_name": status.route_name,
+        "hold_lat": status.hold_lat,
+        "hold_lon": status.hold_lon,
     })
 
     try:
@@ -95,8 +108,10 @@ async def ws_endpoint(websocket: WebSocket):
                 msg_type = msg.get("type")
 
                 if msg_type == "play":
-                    store = websocket.app.state.route_store
-                    route = store.get_route(msg["route_name"])
+                    if msg.get("route"):
+                        route = Route.model_validate(msg["route"])
+                    else:
+                        route = websocket.app.state.route_store.get_route(msg["route_name"])
                     if route:
                         config = PlaybackConfig(
                             speed_mps=msg.get("speed_mps", 1.4),
@@ -106,6 +121,11 @@ async def ws_endpoint(websocket: WebSocket):
                             realism=RealismConfig(**(msg.get("realism") or {})),
                         )
                         await playback.play(route, config)
+                elif msg_type == "hold":
+                    req = HoldRequest(lat=msg["lat"], lon=msg["lon"])
+                    config_payload = msg.get("config")
+                    config = PlaybackConfig(**config_payload) if config_payload else None
+                    await playback.hold(req.lat, req.lon, config)
                 elif msg_type == "pause":
                     await playback.pause()
                 elif msg_type == "resume":

@@ -20,6 +20,7 @@ export class PlaybackControls {
         this.btnPlay = document.getElementById('btn-play');
         this.btnPause = document.getElementById('btn-pause');
         this.btnStop = document.getElementById('btn-stop');
+        this.btnHold = document.getElementById('btn-hold');
         this.btnLoop = document.getElementById('btn-loop');
         this.slider = document.getElementById('speed-slider');
         this.speedLabel = document.getElementById('speed-label');
@@ -120,7 +121,7 @@ export class PlaybackControls {
     }
 
     _isConfigLive() {
-        return this.state === 'playing' || this.state === 'paused';
+        return this.state === 'playing' || this.state === 'paused' || this.state === 'holding';
     }
 
     _normalizeSpeed(mps) {
@@ -232,19 +233,16 @@ export class PlaybackControls {
         if (!route.waypoints || route.waypoints.length < 2) return;
         this.useArrivalTimes = route.waypoints.some(w => w.arrival_time != null);
 
-        try {
-            const resp = await fetch('/api/routes', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(route),
-            });
-            if (!resp.ok) return;
-            this.ws.send({
-                type: 'play',
-                route_name: route.name,
-                ...this._buildConfig(),
-            });
-        } catch {}
+        this.ws.send({
+            type: 'play',
+            route,
+            ...this._buildConfig(),
+        });
+    }
+
+    async hold(lat, lon) {
+        if (!(await this._ensureDeviceReady())) return;
+        this.ws.send({ type: 'hold', lat, lon, config: this._buildConfig() });
     }
 
     async _ensureDeviceReady() {
@@ -289,7 +287,7 @@ export class PlaybackControls {
     }
 
     _scheduleRouteUpdate() {
-        if (!this._isConfigLive()) return;
+        if (this.state !== 'playing' && this.state !== 'paused') return;
         clearTimeout(this._routeUpdateTimer);
         this._routeUpdateTimer = setTimeout(() => {
             this._sendRouteUpdate();
@@ -318,6 +316,7 @@ export class PlaybackControls {
         };
 
         this.scrubBar.onmousedown = (e) => {
+            if (this.state !== 'playing' && this.state !== 'paused') return;
             dragging = true;
             scrub(e);
         };
@@ -341,6 +340,7 @@ export class PlaybackControls {
         this.state = msg.state;
         this.btnPlay.hidden = this.state === 'playing';
         this.btnPause.hidden = this.state !== 'playing';
+        this.btnHold.classList.toggle('active', this.state === 'holding');
 
         if (this.state === 'idle') {
             clearTimeout(this._routeUpdateTimer);

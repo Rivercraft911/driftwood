@@ -115,6 +115,24 @@ def run(route, speed, loop, bounce):
     asyncio.run(_run())
 
 
+@main.command(context_settings={"ignore_unknown_options": True})
+@click.argument('coords', nargs=-1, required=True)
+@click.option('--port', default=7777)
+def hold(coords, port):
+    """Pin the device at COORDS, e.g. `driftwood hold 37.7749, -122.4194`."""
+    import httpx
+    try:
+        lat, lon = (float(c) for c in " ".join(coords).replace(",", " ").split())
+    except ValueError:
+        click.echo("Expected coordinates like: 37.7749, -122.4194")
+        return
+    try:
+        resp = httpx.post(f"http://127.0.0.1:{port}/api/playback/hold", json={"lat": lat, "lon": lon}, timeout=5)
+        click.echo(f"Holding at {lat}, {lon}" if resp.status_code == 200 else f"Error: {resp.text}")
+    except Exception:
+        click.echo("No running server found")
+
+
 @main.command()
 @click.option('--port', default=7777)
 def stop(port):

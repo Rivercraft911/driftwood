@@ -68,9 +68,19 @@ map.on('dragstart', () => {
     }
 });
 
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+function showToast(message, ms = 4000) {
+    toastEl.textContent = message;
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.hidden = true; }, ms);
+}
+
 ws.on('position', (data) => {
     lastPosition = data;
-    trail.addPoint(data.lat, data.lon);
+    if (data.hold) trail.setPosition(data.smooth_lat ?? data.lat, data.smooth_lon ?? data.lon);
+    else trail.addPoint(data.lat, data.lon);
     stats.update(data);
     playback.updateProgress(data.progress);
     if (autoFollow) {
@@ -83,9 +93,15 @@ ws.on('position', (data) => {
 ws.on('state', (data) => {
     playback.onStateChange(data);
     if (data.state === 'idle') {
+        if (data.reason === 'route_complete') showToast('Route complete — phone stays at the last point until you press stop.');
+        else {
+            trail.clear();
+            stats.reset();
+            lastPosition = null;
+        }
+    } else if (data.state === 'holding' && data.reason !== 'snapshot') {
         trail.clear();
-        stats.reset();
-        lastPosition = null;
+        if (data.hold_lat != null) showToast(`Holding at ${data.hold_lat.toFixed(5)}, ${data.hold_lon.toFixed(5)} — press stop to release.`);
     }
 });
 
@@ -93,6 +109,7 @@ ws.on('device', (data) => device.onDeviceEvent(data));
 
 ws.on('error', (data) => {
     console.warn('Server error:', data.message);
+    showToast(data.message, 6000);
 });
 
 ws.connect();
@@ -242,9 +259,14 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         if (playback.state === 'playing') ws.send({ type: 'pause' });
         else if (playback.state === 'paused') ws.send({ type: 'resume' });
-        else document.getElementById('btn-play').click();
+        else if (playback.state !== 'holding') document.getElementById('btn-play').click();
     } else if (e.key === 'Escape') {
-        if (playback.state !== 'idle') ws.send({ type: 'stop' });
+        if (builder.isPicking) {
+            builder.cancelPick();
+            showToast('Standstill pick cancelled.', 1500);
+        } else if (playback.state !== 'idle') {
+            ws.send({ type: 'stop' });
+        }
     }
 });
 
@@ -266,7 +288,7 @@ document.getElementById('btn-fit').onclick = () => {
     const coords = builder.snappedPath && builder.snappedPath.length > 0
         ? builder.snappedPath
         : builder.waypoints.map(w => [w.lat, w.lon]);
-    map.fitBounds(L.latLngBounds(coords), { padding: [50, 50] });
+    map.fitBounds(L.latLngBounds(coords));
 };
 
 function showModal(html) {
@@ -307,14 +329,23 @@ document.getElementById('btn-save').onclick = () => {
     document.getElementById('save-confirm').onclick = async () => {
         const name = document.getElementById('save-name').value.trim();
         if (!name) return;
+        if (builder.waypoints.length === 0) {
+            showToast('Add at least one waypoint before saving.');
+            return;
+        }
         builder._routeName = name;
         const r = builder.toRoute();
-        await fetch('/api/routes', {
+        const resp = await fetch('/api/routes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(r),
-        });
+        }).catch(() => null);
+        if (!resp?.ok) {
+            showToast('Save failed.');
+            return;
+        }
         hideModal();
+        showToast(`Saved "${name}".`, 2000);
     };
     document.getElementById('save-name').onkeydown = (e) => {
         if (e.key === 'Enter') document.getElementById('save-confirm').click();
@@ -376,6 +407,56 @@ document.getElementById('btn-load').onclick = async () => {
             document.getElementById('btn-load').click();
         };
     });
+};
+
+function parseCoords(text) {
+    const parts = text.replace(/[()]/g, ' ').split(/[\s,]+/).filter(Boolean).map(Number);
+    if (parts.length !== 2 || parts.some(n => !Number.isFinite(n))) return null;
+    const [lat, lon] = parts;
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    return { lat, lon };
+}
+
+document.getElementById('btn-hold').onclick = () => {
+    const center = map.getCenter();
+    const start = lastPosition
+        ? { lat: lastPosition.smooth_lat ?? lastPosition.lat, lon: lastPosition.smooth_lon ?? lastPosition.lon }
+        : { lat: center.lat, lon: center.lng };
+    showModal(`
+        <h3>Standstill</h3>
+        <p class="modal-hint">Pin the phone to one spot until you press stop. Paste coordinates (e.g. from Google Maps) or pick a point on the map.</p>
+        <input type="text" id="hold-coords" value="${start.lat.toFixed(6)}, ${start.lon.toFixed(6)}" spellcheck="false" autofocus>
+        <div class="modal-actions">
+            <button class="btn-cancel" id="hold-cancel">Cancel</button>
+            <button class="btn-cancel" id="hold-pick">Pick on map</button>
+            <button id="hold-confirm">Hold here</button>
+        </div>
+    `);
+    const input = document.getElementById('hold-coords');
+    input.select();
+    document.getElementById('hold-cancel').onclick = hideModal;
+    document.getElementById('hold-pick').onclick = () => {
+        hideModal();
+        showToast('Click the map to choose the standstill spot · Esc to cancel', 8000);
+        builder.pickPoint((lat, lon) => {
+            toastEl.hidden = true;
+            playback.hold(lat, lon);
+        });
+    };
+    document.getElementById('hold-confirm').onclick = () => {
+        const coords = parseCoords(input.value);
+        if (!coords) {
+            input.classList.add('invalid');
+            return;
+        }
+        hideModal();
+        playback.hold(coords.lat, coords.lon);
+        map.setView([coords.lat, coords.lon], Math.max(map.getZoom(), 15));
+    };
+    input.oninput = () => input.classList.remove('invalid');
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') document.getElementById('hold-confirm').click();
+    };
 };
 
 document.getElementById('btn-clear').onclick = () => {

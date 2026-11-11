@@ -2,6 +2,7 @@ import asyncio
 from enum import Enum
 from ..models.playback import PlaybackConfig, PlaybackStatus
 from .simulation import SimulationEngine
+from ..engine.realism import JitterGenerator
 from .. import config as cfg
 
 
@@ -9,6 +10,7 @@ class PlaybackState(str, Enum):
     IDLE = "idle"
     PLAYING = "playing"
     PAUSED = "paused"
+    HOLDING = "holding"
 
 
 class PlaybackController:
@@ -24,6 +26,7 @@ class PlaybackController:
         self._last_device_push_at = None
         self._device_push_task = None
         self._device_error_active = False
+        self.hold_point = None
 
     @property
     def status(self):
@@ -32,6 +35,8 @@ class PlaybackController:
             route_name=self.route_name,
             config=self._config,
         )
+        if self.hold_point:
+            s.hold_lat, s.hold_lon = self.hold_point
         if self.simulation:
             s.progress = self.simulation.progress
             s.elapsed_s = self.simulation.elapsed
@@ -42,7 +47,7 @@ class PlaybackController:
             s.remaining_s = self.simulation.estimate_remaining_seconds(speed_for_eta)
         return s
 
-    async def play(self, route, config=None):
+    async def _cancel_task(self):
         if self._task and not self._task.done():
             self._task.cancel()
             try:
@@ -50,6 +55,10 @@ class PlaybackController:
             except asyncio.CancelledError:
                 pass
 
+    async def play(self, route, config=None):
+        await self._cancel_task()
+
+        self.hold_point = None
         self._config = config or PlaybackConfig()
         self.route_name = route.name
         self.simulation = SimulationEngine(route, self._config)
@@ -59,6 +68,20 @@ class PlaybackController:
         self._device_error_active = False
         self._cancel_device_push()
         self._task = asyncio.create_task(self._tick_loop())
+        await self._broadcast_state("user")
+
+    async def hold(self, lat, lon, config=None):
+        await self._cancel_task()
+        if config:
+            self._config = config
+        self.simulation = None
+        self.route_name = None
+        self.hold_point = (lat, lon)
+        self.state = PlaybackState.HOLDING
+        self._last_device_push_at = None
+        self._device_error_active = False
+        self._cancel_device_push()
+        self._task = asyncio.create_task(self._hold_loop())
         await self._broadcast_state("user")
 
     async def pause(self):
@@ -76,12 +99,7 @@ class PlaybackController:
 
     async def stop(self):
         self.state = PlaybackState.IDLE
-        if self._task and not self._task.done():
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+        await self._cancel_task()
         self._cancel_device_push()
         if self.device_manager:
             try:
@@ -90,6 +108,7 @@ class PlaybackController:
                 pass
         self.simulation = None
         self.route_name = None
+        self.hold_point = None
         self._speed_ema = None
         self._last_device_push_at = None
         self._device_error_active = False
@@ -108,6 +127,8 @@ class PlaybackController:
             self.simulation.update_config(config)
 
     async def update_route(self, route):
+        if self.state == PlaybackState.HOLDING:
+            return
         if not self.simulation:
             self.route_name = route.name
             self.simulation = SimulationEngine(route, self._config)
@@ -201,6 +222,45 @@ class PlaybackController:
         except asyncio.CancelledError:
             pass
 
+    async def _hold_loop(self):
+        jitter = JitterGenerator(self._config.realism)
+        elapsed = 0.0
+        try:
+            while self.state == PlaybackState.HOLDING:
+                lat, lon = self.hold_point
+                jitter.enabled = self._config.realism.jitter_enabled
+                jitter.radius_m = self._config.realism.jitter_radius_m
+                jlat, jlon = jitter.apply(lat, lon)
+
+                should_push = (
+                    self._last_device_push_at is None
+                    or elapsed - self._last_device_push_at >= self._config.device_update_interval_s
+                )
+                if should_push:
+                    self._schedule_device_push(jlat, jlon)
+                    self._last_device_push_at = elapsed
+
+                await self._broadcast({
+                    "type": "position",
+                    "hold": True,
+                    "lat": jlat,
+                    "lon": jlon,
+                    "smooth_lat": lat,
+                    "smooth_lon": lon,
+                    "speed_mps": 0.0,
+                    "heading": 0.0,
+                    "elapsed_s": elapsed,
+                    "progress": 0.0,
+                    "distance_m": 0.0,
+                    "total_distance_m": 0.0,
+                    "remaining_s": 0.0,
+                })
+
+                await asyncio.sleep(cfg.TICK_INTERVAL)
+                elapsed += cfg.TICK_INTERVAL
+        except asyncio.CancelledError:
+            pass
+
     def _schedule_device_push(self, lat, lon):
         if not self.device_manager:
             return
@@ -235,6 +295,8 @@ class PlaybackController:
             "state": self.state.value,
             "reason": reason,
             "route_name": self.route_name,
+            "hold_lat": self.hold_point[0] if self.hold_point else None,
+            "hold_lon": self.hold_point[1] if self.hold_point else None,
         })
 
     async def _broadcast(self, msg):

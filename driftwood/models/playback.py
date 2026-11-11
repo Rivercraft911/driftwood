@@ -37,4 +37,6 @@ class PlaybackStatus(BaseModel):
     distance_m: float = 0.0
     total_distance_m: float = 0.0
     remaining_s: float = 0.0
+    hold_lat: Optional[float] = None
+    hold_lon: Optional[float] = None
     config: Optional[PlaybackConfig] = None

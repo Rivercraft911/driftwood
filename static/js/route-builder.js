@@ -11,18 +11,34 @@ export class RouteBuilder {
         this._snapRequestId = 0;
         this._snapBackoffUntil = { osrm: 0, mapbox: 0 };
         this._isSnapping = false;
+        this._pickHandler = null;
         this.routingProfile = 'walking';
         this._routingProviders = this._buildRoutingProviders(routingConfig);
         this.routerProvider = this._initialRouterProvider(routingConfig.defaultProvider);
-        this._markerIcon = L.divIcon({
-            className: 'waypoint-marker',
-            html: '',
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
-        });
-
         this._injectMarkerStyles();
-        this.map.on('click', (e) => this.addWaypoint(e.latlng.lat, e.latlng.lng));
+        this.map.on('click', (e) => {
+            if (this._pickHandler) {
+                const fn = this._pickHandler;
+                this.cancelPick();
+                fn(e.latlng.lat, e.latlng.lng);
+                return;
+            }
+            this.addWaypoint(e.latlng.lat, e.latlng.lng);
+        });
+    }
+
+    pickPoint(fn) {
+        this._pickHandler = fn;
+        document.body.classList.add('picking');
+    }
+
+    cancelPick() {
+        this._pickHandler = null;
+        document.body.classList.remove('picking');
+    }
+
+    get isPicking() {
+        return Boolean(this._pickHandler);
     }
 
     _injectMarkerStyles() {
@@ -117,16 +133,20 @@ export class RouteBuilder {
         this._emit();
     }
 
-    addWaypoint(lat, lon) {
-        const idx = this.waypoints.length;
-        const icon = L.divIcon({
+    _waypointIcon(index) {
+        return L.divIcon({
             className: 'waypoint-marker',
-            html: `${idx + 1}`,
+            html: `${index + 1}`,
             iconSize: [24, 24],
             iconAnchor: [12, 12],
         });
+    }
 
-        const marker = L.marker([lat, lon], { icon, draggable: true }).addTo(this.map);
+    _createMarker(lat, lon) {
+        const marker = L.marker([lat, lon], {
+            icon: this._waypointIcon(this.waypoints.length),
+            draggable: true,
+        }).addTo(this.map);
 
         marker.on('dragend', () => {
             const pos = marker.getLatLng();
@@ -137,9 +157,16 @@ export class RouteBuilder {
                 this._onGeometryChanged();
             }
         });
+        marker.on('contextmenu', () => {
+            this.removeWaypoint(this.waypoints.findIndex(w => w.marker === marker));
+        });
+        return marker;
+    }
 
+    addWaypoint(lat, lon) {
         this.waypoints.push({
-            lat, lon, marker,
+            lat, lon,
+            marker: this._createMarker(lat, lon),
             arrivalTime: null,
             dwellTime: null,
             label: null,
@@ -158,14 +185,7 @@ export class RouteBuilder {
     }
 
     _renumberMarkers() {
-        this.waypoints.forEach((wp, i) => {
-            wp.marker.setIcon(L.divIcon({
-                className: 'waypoint-marker',
-                html: `${i + 1}`,
-                iconSize: [24, 24],
-                iconAnchor: [12, 12],
-            }));
-        });
+        this.waypoints.forEach((wp, i) => wp.marker.setIcon(this._waypointIcon(i)));
     }
 
     _updateLine() {
@@ -265,12 +285,7 @@ export class RouteBuilder {
     }
 
     undo() {
-        if (this.waypoints.length === 0) return;
-        const wp = this.waypoints[this.waypoints.length - 1];
-        wp.marker.remove();
-        this.waypoints.pop();
-        this._renumberMarkers();
-        this._onGeometryChanged();
+        this.removeWaypoint(this.waypoints.length - 1);
     }
 
     clearRoute() {
@@ -323,35 +338,20 @@ export class RouteBuilder {
 
         const wps = route.waypoints || [];
         for (const w of wps) {
-            const idx = this.waypoints.length;
-            const icon = L.divIcon({
-                className: 'waypoint-marker',
-                html: `${idx + 1}`,
-                iconSize: [24, 24],
-                iconAnchor: [12, 12],
-            });
-            const marker = L.marker([w.lat, w.lon], { icon, draggable: true }).addTo(this.map);
-            marker.on('dragend', () => {
-                const pos = marker.getLatLng();
-                const wp = this.waypoints.find(x => x.marker === marker);
-                if (wp) {
-                    wp.lat = pos.lat;
-                    wp.lon = pos.lng;
-                    this._onGeometryChanged();
-                }
-            });
             this.waypoints.push({
-                lat: w.lat, lon: w.lon, marker,
+                lat: w.lat, lon: w.lon,
+                marker: this._createMarker(w.lat, w.lon),
                 arrivalTime: w.arrival_time == null ? null : ((w.arrival_time % 86400) + 86400) % 86400,
                 dwellTime: w.dwell_time ?? null,
                 label: w.label || null,
             });
         }
 
-        this._updateLine();
+        if (this.snapEnabled && !this.snappedPath && this.waypoints.length >= 2) void this.snapToRoads();
+        else this._updateLine();
         if (this.waypoints.length > 0) {
             const bounds = L.latLngBounds(this.waypoints.map(w => [w.lat, w.lon]));
-            this.map.fitBounds(bounds, { padding: [50, 50] });
+            this.map.fitBounds(bounds);
         }
         this._emit();
     }

@@ -55,6 +55,7 @@
         </div>
         <ul id="waypoint-list"></ul>
         <div id="route-empty" class="empty-state">Click the map to add waypoints</div>
+        <div class="route-hint">Drag dots to move · right-click to delete</div>
     </div>
 
     <div id="playback-bar" class="floating-panel bottom">
@@ -69,6 +70,7 @@
                 <button id="btn-play" class="btn-icon" title="Play">&#9654;</button>
                 <button id="btn-pause" class="btn-icon" title="Pause" hidden>&#10074;&#10074;</button>
                 <button id="btn-stop" class="btn-icon" title="Stop">&#9632;</button>
+                <button id="btn-hold" class="btn-icon" title="Standstill: pin the phone to one spot">&#8982;</button>
             </div>
             <div id="speed-unit-toggle" class="unit-toggle">
                 <button type="button" class="unit-btn active" data-unit="mph">mph</button>
@@ -111,6 +113,8 @@
         <label class="toggle-label"><input type="checkbox" id="easing-toggle" checked><span>Easing</span></label>
         <label class="toggle-label"><input type="checkbox" id="drift-toggle" checked><span>Drift</span></label>
     </div>
+
+    <div id="toast" hidden></div>
 
     <div id="modal-overlay" class="modal-overlay" hidden>
         <div id="modal-content" class="modal"></div>

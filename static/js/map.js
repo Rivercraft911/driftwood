@@ -48,6 +48,12 @@ function cssVar(name, fallback) {
     return value || fallback;
 }
 
+// Keep fitted routes clear of the floating panels on wide screens.
+function panelPadding() {
+    if (window.innerWidth < 900 || window.innerHeight < 600) return 40;
+    return { top: 90, bottom: 190, left: 180, right: 420 };
+}
+
 function markerOffset(icon = {}) {
     if (!Array.isArray(icon.iconSize) || !Array.isArray(icon.iconAnchor)) return [0, 0];
     return [
@@ -76,6 +82,11 @@ class MapboxMarker {
         this._marker = null;
         this._map = null;
         this._element = document.createElement('div');
+        this._element.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this._emit('contextmenu', { target: this, originalEvent: e });
+        });
         this._applyIcon(options.icon);
         if (options.zIndexOffset != null) this._element.style.zIndex = String(options.zIndexOffset);
     }
@@ -144,8 +155,10 @@ class MapboxMarker {
     }
 
     _applyIcon(icon = {}) {
+        const classes = (value) => (value || '').split(/\s+/).filter(Boolean);
+        this._element.classList.remove(...classes(this._icon?.className));
         this._icon = icon;
-        this._element.className = icon.className || '';
+        this._element.classList.add(...classes(icon.className));
         this._element.innerHTML = icon.html || '';
         if (Array.isArray(icon.iconSize)) {
             this._element.style.width = `${icon.iconSize[0]}px`;
@@ -167,6 +180,12 @@ class MapboxPolyline {
     addTo(map) {
         this._map = map;
         map._registerLine(this);
+        return this;
+    }
+
+    setLatLngs(coords) {
+        this._coords = coords;
+        if (this._map) this._map._renderLine(this);
         return this;
     }
 
@@ -251,6 +270,7 @@ class MapboxMapAdapter {
             for (const line of this._lineOverlays) this._renderLine(line);
         });
         this._map.on('click', (event) => {
+            if (event.originalEvent?.target?.closest?.('.mapboxgl-marker')) return;
             this._emit('click', {
                 latlng: { lat: event.lngLat.lat, lng: event.lngLat.lng },
                 originalEvent: event,
@@ -276,6 +296,12 @@ class MapboxMapAdapter {
         return this;
     }
 
+    getCenter() {
+        if (!this._map) return { lat: this._center[0], lng: this._center[1] };
+        const c = this._map.getCenter();
+        return { lat: c.lat, lng: c.lng };
+    }
+
     getZoom() {
         return this._map ? this._map.getZoom() : this._zoom;
     }
@@ -288,9 +314,7 @@ class MapboxMapAdapter {
 
         const mbBounds = new mapboxgl.LngLatBounds();
         for (const coord of coords) mbBounds.extend(toLngLat(coord));
-        const padding = Array.isArray(options.padding)
-            ? Math.max(...options.padding)
-            : options.padding ?? 50;
+        const padding = options.padding ?? panelPadding();
         this._map.fitBounds(mbBounds, { padding, maxZoom: options.maxZoom || 17 });
         return this;
     }
@@ -366,7 +390,6 @@ class MapboxMapAdapter {
 
     _renderLine(line) {
         if (!this._map || !this._map.isStyleLoaded()) return;
-        this._pruneLineArtifacts();
         if (this._map.getSource(line._sourceId)) {
             this._map.getSource(line._sourceId).setData(line.geojson());
             if (this._map.getLayer(line._layerId)) {
@@ -377,6 +400,7 @@ class MapboxMapAdapter {
             return;
         }
 
+        this._pruneLineArtifacts();
         this._map.addSource(line._sourceId, {
             type: 'geojson',
             data: line.geojson(),

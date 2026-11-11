@@ -2,20 +2,19 @@ export class TrailRenderer {
     constructor(map) {
         this.map = map;
         this.points = [];
-        this.segments = [];
+        this.line = null;
         this.posMarker = null;
-        this.TRAIL_LENGTH = 80;
-        this.FADE_DURATION = 20;
+        this.TRAIL_LENGTH = 2400;
     }
 
     addPoint(lat, lon) {
-        this.points.push({ lat, lon, ts: Date.now() });
+        this.points.push([lat, lon]);
         if (this.points.length > this.TRAIL_LENGTH) this.points.shift();
         this._render();
-        this._updatePosition(lat, lon);
+        this.setPosition(lat, lon);
     }
 
-    _updatePosition(lat, lon) {
+    setPosition(lat, lon) {
         if (!this.posMarker) {
             this.posMarker = L.marker([lat, lon], {
                 icon: L.divIcon({
@@ -31,28 +30,27 @@ export class TrailRenderer {
     }
 
     refresh() {
+        if (this.line) {
+            this.line.remove();
+            this.line = null;
+        }
         this._render();
     }
 
     _render() {
-        for (const s of this.segments) s.remove();
-        this.segments = [];
-        const now = Date.now();
-        for (let i = 1; i < this.points.length; i++) {
-            const age = (now - this.points[i].ts) / 1000;
-            const opacity = Math.max(0.05, 1 - age / this.FADE_DURATION);
-            const seg = L.polyline(
-                [[this.points[i - 1].lat, this.points[i - 1].lon],
-                 [this.points[i].lat, this.points[i].lon]],
-                { colorVar: '--amber', weight: 3, opacity }
-            ).addTo(this.map);
-            this.segments.push(seg);
+        if (this.points.length < 2) return;
+        if (this.line) {
+            this.line.setLatLngs(this.points.slice());
+        } else {
+            this.line = L.polyline(this.points.slice(), { colorVar: '--trail', color: '#38bdf8', weight: 5, opacity: 0.95 }).addTo(this.map);
         }
     }
 
     clear() {
-        for (const s of this.segments) s.remove();
-        this.segments = [];
+        if (this.line) {
+            this.line.remove();
+            this.line = null;
+        }
         this.points = [];
         if (this.posMarker) {
             this.posMarker.remove();
