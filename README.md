@@ -40,6 +40,12 @@ Draw GPS routes on a map. Walk your iPhone along them in real time over USB. No 
 
 Turn on **Snap to roads** with the **Drive** preset and the route sticks to drivable streets, following one-ways and turn restrictions instead of cutting through buildings. Blue is the path the phone has driven so far, at a steady 35 mph (GIF is sped up ~60×).
 
+### Or the whole country
+
+![A snapped route from Worcester, MA to Stanford, CA](docs/screenshot-usa.jpg)
+
+Two clicks: one in Worcester, MA, one at Stanford. Snap to roads plans the interstate drive between them, and Driftwood puts the remaining time at about 45½ hours at 70 mph. Your friends will be very impressed with your stamina.
+
 ## Controls
 
 | Action | How |
